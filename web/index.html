@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0f3d5c" />
+<title>求职尽调助手</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  :root{
+    --bg:#eef1f5; --panel:#fff; --ink:#1b2733; --muted:#6b7b8c;
+    --brand:#0f3d5c; --brand2:#1c6ea4; --bubble-me:#1c6ea4; --line:#dde3ea;
+    --ok:#1c8a5a; --warn:#c2410c; --err:#c0392b;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; height:100%;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg); color:var(--ink);
+    display:flex; flex-direction:column; height:100dvh; overflow:hidden;
+  }
+  header{
+    background:var(--brand); color:#fff; padding:env(safe-area-inset-top) 14px 0;
+    display:flex; align-items:center; gap:10px; min-height:54px; flex:0 0 auto;
+  }
+  header .bar{display:flex; align-items:center; gap:10px; width:100%; min-height:54px;}
+  header .logo{font-size:20px;}
+  header h1{font-size:16px; font-weight:600; margin:0; flex:1; line-height:1.2;}
+  header h1 small{display:block; font-size:11px; font-weight:400; opacity:.75;}
+  header button{
+    background:rgba(255,255,255,.15); color:#fff; border:0; border-radius:8px;
+    padding:7px 12px; font-size:13px;
+  }
+  header button:active{background:rgba(255,255,255,.28);}
+  #scroll{flex:1; overflow-y:auto; padding:16px 12px 8px; -webkit-overflow-scrolling:touch;}
+  #wrap{max-width:760px; margin:0 auto;}
+  .msg{display:flex; margin:10px 0; gap:8px;}
+  .msg.me{justify-content:flex-end;}
+  .bubble{
+    max-width:86%; padding:11px 14px; border-radius:16px; font-size:15px; line-height:1.6;
+    word-wrap:break-word; overflow-wrap:anywhere;
+  }
+  .me .bubble{background:var(--bubble-me); color:#fff; border-bottom-right-radius:5px;}
+  .bot .bubble{background:var(--panel); color:var(--ink); border:1px solid var(--line);
+    border-bottom-left-radius:5px; box-shadow:0 1px 2px rgba(20,40,60,.04);}
+  .steps{font-size:12.5px; color:var(--muted); margin-bottom:6px;}
+  .steps .step{display:flex; align-items:center; gap:6px; padding:2px 0;}
+  .steps .dot{width:6px;height:6px;border-radius:50%;background:var(--brand2);flex:0 0 auto;}
+  .steps.done{opacity:.7;}
+  .steps summary{cursor:pointer; list-style:none; color:var(--brand2);}
+  .answer :first-child{margin-top:0;} .answer :last-child{margin-bottom:0;}
+  .answer h1,.answer h2,.answer h3{font-size:15.5px; margin:14px 0 6px;}
+  .answer p{margin:8px 0;} .answer ul,.answer ol{margin:8px 0; padding-left:20px;}
+  .answer table{border-collapse:collapse; font-size:13px; width:100%; margin:8px 0; display:block; overflow-x:auto;}
+  .answer th,.answer td{border:1px solid var(--line); padding:5px 8px; text-align:left;}
+  .answer code{background:#f0f3f7; padding:1px 5px; border-radius:4px; font-size:13px;}
+  .answer strong{color:var(--brand);}
+  .typing .d{display:inline-block;width:6px;height:6px;margin:0 1px;border-radius:50%;background:var(--brand2);animation:b 1.2s infinite;}
+  .typing .d:nth-child(2){animation-delay:.2s;} .typing .d:nth-child(3){animation-delay:.4s;}
+  @keyframes b{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+  .err{color:var(--err); font-size:14px;}
+  .welcome{color:var(--muted); text-align:center; margin:28px 8px;}
+  .welcome .big{font-size:17px; color:var(--ink); margin-bottom:6px;}
+  .chips{display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top:14px;}
+  .chip{background:var(--panel); border:1px solid var(--line); border-radius:18px;
+    padding:8px 14px; font-size:13px; color:var(--brand2);}
+  .chip:active{background:#e8eef4;}
+  footer{flex:0 0 auto; background:var(--panel); border-top:1px solid var(--line);
+    padding:10px 12px calc(10px + env(safe-area-inset-bottom));}
+  .inputbar{max-width:760px; margin:0 auto; display:flex; gap:8px; align-items:flex-end;}
+  #q{flex:1; resize:none; border:1px solid var(--line); border-radius:20px; padding:11px 15px;
+    font-size:15px; max-height:200px; outline:none; font-family:inherit; line-height:1.4;}
+  #q:focus{border-color:var(--brand2);}
+  #send{flex:0 0 auto; width:46px; height:46px; border-radius:50%; border:0; background:var(--brand);
+    color:#fff; font-size:18px; display:flex; align-items:center; justify-content:center;}
+  #send:disabled{opacity:.45;}
+  #gate{position:fixed; inset:0; background:var(--bg); display:none; align-items:center; justify-content:center; z-index:9; padding:24px;}
+  #gate .card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:22px; width:100%; max-width:340px;}
+  #gate h2{margin:0 0 6px; font-size:16px;} #gate p{color:var(--muted); font-size:13px; margin:0 0 14px;}
+  #gate input{width:100%; padding:11px 14px; border:1px solid var(--line); border-radius:10px; font-size:15px; margin-bottom:12px;}
+  #gate button{width:100%; padding:11px; border:0; border-radius:10px; background:var(--brand); color:#fff; font-size:15px;}
+  #gate .gerr{color:var(--err); font-size:13px; min-height:18px;}
+</style>
+</head>
+<body>
+  <header><div class="bar">
+    <span class="logo">🎓</span>
+    <h1>求职尽调助手<small>查公司 · 读懂 JD（数据来自天眼查）</small></h1>
+    <button id="newchat">新对话</button>
+  </div></header>
+
+  <div id="scroll"><div id="wrap">
+    <div class="welcome" id="welcome">
+      <div class="big">输入公司名，或粘贴一段招聘 JD</div>
+      <div>查公司：规模 / 是否正规 / 是否外包；读 JD：翻译黑话、拆解要求、识别坑。</div>
+      <div class="chips">
+        <span class="chip">北京金堤科技有限公司</span>
+        <span class="chip">这家公司是外包吗？</span>
+        <span class="chip jd">📋 解读一段招聘 JD 示例</span>
+      </div>
+    </div>
+  </div></div>
+
+  <footer><div class="inputbar">
+    <textarea id="q" rows="1" placeholder="输入公司名，或粘贴一段招聘 JD…" autocomplete="off"></textarea>
+    <button id="send" aria-label="发送">➤</button>
+  </div></footer>
+
+  <div id="gate"><div class="card">
+    <h2>需要访问码</h2>
+    <p>本应用已开启访问保护，请输入访问码后使用。</p>
+    <input id="gcode" type="password" placeholder="访问码" />
+    <div class="gerr" id="gerr"></div>
+    <button id="gbtn">进入</button>
+  </div></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const scroll = $('#scroll'), wrap = $('#wrap'), q = $('#q'), send = $('#send');
+let sessionId = localStorage.getItem('tyc_sid') || (crypto.randomUUID ? crypto.randomUUID() : Date.now()+''+Math.random());
+localStorage.setItem('tyc_sid', sessionId);
+let accessCode = localStorage.getItem('tyc_code') || '';
+let streaming = false;
+
+marked.setOptions({breaks:true});
+
+function scrollDown(){ scroll.scrollTop = scroll.scrollHeight; }
+function hideWelcome(){ const w=$('#welcome'); if(w) w.remove(); }
+
+function addUser(text){
+  hideWelcome();
+  const d=document.createElement('div'); d.className='msg me';
+  const b=document.createElement('div'); b.className='bubble'; b.textContent=text;
+  d.appendChild(b); wrap.appendChild(d); scrollDown();
+}
+function addBot(){
+  const d=document.createElement('div'); d.className='msg bot';
+  const b=document.createElement('div'); b.className='bubble';
+  const steps=document.createElement('div'); steps.className='steps';
+  const ans=document.createElement('div'); ans.className='answer';
+  ans.innerHTML='<span class="typing"><span class="d"></span><span class="d"></span><span class="d"></span></span>';
+  b.appendChild(steps); b.appendChild(ans); d.appendChild(b); wrap.appendChild(d); scrollDown();
+  return {steps, ans};
+}
+function addStep(steps, label, target){
+  const s=document.createElement('div'); s.className='step';
+  s.innerHTML='<span class="dot"></span><span></span>';
+  s.lastChild.textContent = target ? `${label}：${target}` : label;
+  steps.appendChild(s); scrollDown();
+}
+
+async function sendMsg(text){
+  text=(text||'').trim(); if(!text || streaming) return;
+  streaming=true; send.disabled=true; q.value=''; q.style.height='auto';
+  addUser(text);
+  const {steps, ans} = addBot();
+  try{
+    const res = await fetch('/api/chat', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-Access-Code':accessCode},
+      body: JSON.stringify({session_id:sessionId, message:text})
+    });
+    if(res.status===401){ ans.innerHTML='<span class="err">访问码无效，请刷新后重新输入。</span>'; localStorage.removeItem('tyc_code'); return; }
+    if(!res.ok){ ans.innerHTML='<span class="err">服务出错（'+res.status+'）。</span>'; return; }
+    const reader=res.body.getReader(); const dec=new TextDecoder(); let buf='';
+    while(true){
+      const {done,value}=await reader.read(); if(done) break;
+      buf+=dec.decode(value,{stream:true}); let i;
+      while((i=buf.indexOf('\n'))>=0){
+        const line=buf.slice(0,i); buf=buf.slice(i+1); if(!line.trim()) continue;
+        let ev; try{ ev=JSON.parse(line); }catch{ continue; }
+        if(ev.type==='tool'){ addStep(steps, ev.label, ev.target); }
+        else if(ev.type==='answer'){
+          ans.innerHTML = marked.parse(ev.content || '（无内容）');
+          if(steps.children.length){
+            const det=document.createElement('details'); det.className='';
+            const sm=document.createElement('summary'); sm.textContent=`已完成 ${steps.children.length} 步数据查询`;
+            steps.classList.add('done'); det.appendChild(sm);
+            steps.parentNode.insertBefore(det, steps); det.appendChild(steps);
+          }
+          scrollDown();
+        }
+        else if(ev.type==='error'){ ans.innerHTML='<span class="err">出错：'+(ev.message||'未知错误')+'</span>'; }
+      }
+    }
+  }catch(e){
+    ans.innerHTML='<span class="err">网络错误：'+e.message+'</span>';
+  }finally{
+    streaming=false; send.disabled=false; q.focus();
+  }
+}
+
+send.addEventListener('click', ()=>sendMsg(q.value));
+q.addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendMsg(q.value); } });
+q.addEventListener('input', ()=>{ q.style.height='auto'; q.style.height=Math.min(q.scrollHeight,200)+'px'; });
+const SAMPLE_JD = `【Java开发工程师（2025校招）】
+岗位职责：
+1. 负责公司核心业务系统的设计与开发；
+2. 参与微服务架构演进，保障系统高可用；
+3. 配合团队完成需求迭代，及时响应线上问题。
+任职要求：
+1. 本科及以上学历，计算机相关专业，2025届毕业生；
+2. 熟悉 Java、Spring Boot，了解 MySQL、Redis；
+3. 有扎实的数据结构与算法基础；
+4. 有大厂实习或开源项目经历者优先；
+5. 抗压能力强，能适应快节奏的工作氛围，认同狼性文化。
+薪资 8-15K·13薪，弹性工作制，五险一金，扁平化管理，平台广阔、成长空间大。`;
+document.addEventListener('click', e=>{
+  if(!e.target.classList.contains('chip')) return;
+  sendMsg(e.target.classList.contains('jd') ? SAMPLE_JD : e.target.textContent);
+});
+$('#newchat').addEventListener('click', async ()=>{
+  try{ await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId})}); }catch{}
+  sessionId = crypto.randomUUID ? crypto.randomUUID() : Date.now()+''+Math.random();
+  localStorage.setItem('tyc_sid', sessionId);
+  wrap.innerHTML=''; location.reload();
+});
+
+// 访问码门控
+async function gate(){
+  let cfg={requireAccessCode:false};
+  try{ cfg=await (await fetch('/api/config')).json(); }catch{}
+  if(cfg.requireAccessCode && !accessCode){
+    const g=$('#gate'); g.style.display='flex';
+    const submit=()=>{ const v=$('#gcode').value.trim(); if(!v){ $('#gerr').textContent='请输入访问码'; return; }
+      accessCode=v; localStorage.setItem('tyc_code',v); g.style.display='none'; q.focus(); };
+    $('#gbtn').addEventListener('click', submit);
+    $('#gcode').addEventListener('keydown', e=>{ if(e.key==='Enter') submit(); });
+  }
+}
+gate();
+</script>
+</body>
+</html>
