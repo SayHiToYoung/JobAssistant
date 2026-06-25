@@ -4,107 +4,179 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#0f3d5c" />
-<title>求职尽调助手</title>
+<title>求职助手 · 查公司 + 读 JD</title>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
   :root{
-    --bg:#eef1f5; --panel:#fff; --ink:#1b2733; --muted:#6b7b8c;
-    --brand:#0f3d5c; --brand2:#1c6ea4; --bubble-me:#1c6ea4; --line:#dde3ea;
-    --ok:#1c8a5a; --warn:#c2410c; --err:#c0392b;
+    --bg:#eceff4; --panel:#fff; --ink:#1c2733; --muted:#6b7a8c; --soft:#f4f7fb;
+    --brand:#0f3d5c; --brand2:#1f6fa8; --line:#e2e8f0; --line2:#eef2f7;
+    --ok:#1c8a5a; --err:#c0392b;
+    --shadow:0 1px 3px rgba(16,40,64,.07), 0 6px 18px rgba(16,40,64,.05);
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{margin:0; height:100%;}
   body{
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
-    background:var(--bg); color:var(--ink);
-    display:flex; flex-direction:column; height:100dvh; overflow:hidden;
+    background:var(--bg); color:var(--ink); display:flex; flex-direction:column;
+    height:100dvh; overflow:hidden; -webkit-font-smoothing:antialiased;
   }
+
+  /* 顶栏 */
   header{
-    background:var(--brand); color:#fff; padding:env(safe-area-inset-top) 14px 0;
-    display:flex; align-items:center; gap:10px; min-height:54px; flex:0 0 auto;
+    background:linear-gradient(135deg,#13486b,#0d3650); color:#fff;
+    padding:env(safe-area-inset-top) 16px 0; flex:0 0 auto;
+    box-shadow:0 2px 12px rgba(13,54,80,.18); z-index:5;
   }
-  header .bar{display:flex; align-items:center; gap:10px; width:100%; min-height:54px;}
-  header .logo{font-size:20px;}
-  header h1{font-size:16px; font-weight:600; margin:0; flex:1; line-height:1.2;}
-  header h1 small{display:block; font-size:11px; font-weight:400; opacity:.75;}
-  header button{
-    background:rgba(255,255,255,.15); color:#fff; border:0; border-radius:8px;
-    padding:7px 12px; font-size:13px;
-  }
-  header button:active{background:rgba(255,255,255,.28);}
-  #scroll{flex:1; overflow-y:auto; padding:16px 12px 8px; -webkit-overflow-scrolling:touch;}
-  #wrap{max-width:760px; margin:0 auto;}
-  .msg{display:flex; margin:10px 0; gap:8px;}
+  header .bar{display:flex; align-items:center; gap:11px; width:100%; max-width:780px; margin:0 auto; min-height:56px;}
+  header .logo{width:34px; height:34px; border-radius:10px; background:rgba(255,255,255,.16);
+    display:flex; align-items:center; justify-content:center; font-size:19px; flex:0 0 auto;}
+  header h1{font-size:16px; font-weight:600; margin:0; flex:1; line-height:1.25;}
+  header h1 small{display:block; font-size:11px; font-weight:400; opacity:.72; margin-top:1px;}
+  header button{background:rgba(255,255,255,.16); color:#fff; border:0; border-radius:9px;
+    padding:8px 13px; font-size:13px; transition:background .15s;}
+  header button:active{background:rgba(255,255,255,.3);}
+
+  /* 消息区 */
+  #scroll{flex:1; overflow-y:auto; padding:18px 12px 10px; -webkit-overflow-scrolling:touch; scroll-behavior:smooth;}
+  #wrap{max-width:780px; margin:0 auto;}
+  .msg{display:flex; margin:14px 0;}
   .msg.me{justify-content:flex-end;}
-  .bubble{
-    max-width:86%; padding:11px 14px; border-radius:16px; font-size:15px; line-height:1.6;
-    word-wrap:break-word; overflow-wrap:anywhere;
-  }
-  .me .bubble{background:var(--bubble-me); color:#fff; border-bottom-right-radius:5px;}
+  .bubble{max-width:88%; padding:12px 15px; border-radius:18px; font-size:15px; line-height:1.65;
+    word-wrap:break-word; overflow-wrap:anywhere;}
+  .me .bubble{background:linear-gradient(135deg,#2079b5,#155a89); color:#fff;
+    border-bottom-right-radius:6px; box-shadow:0 2px 8px rgba(21,90,137,.22);}
   .bot .bubble{background:var(--panel); color:var(--ink); border:1px solid var(--line);
-    border-bottom-left-radius:5px; box-shadow:0 1px 2px rgba(20,40,60,.04);}
-  .steps{font-size:12.5px; color:var(--muted); margin-bottom:6px;}
-  .steps .step{display:flex; align-items:center; gap:6px; padding:2px 0;}
-  .steps .dot{width:6px;height:6px;border-radius:50%;background:var(--brand2);flex:0 0 auto;}
-  .steps.done{opacity:.7;}
-  .steps summary{cursor:pointer; list-style:none; color:var(--brand2);}
+    border-bottom-left-radius:6px; box-shadow:var(--shadow);}
+
+  /* 查询进度卡片 */
+  .steps{background:var(--soft); border:1px solid var(--line2); border-radius:12px;
+    padding:9px 12px; margin-bottom:10px; font-size:12.5px; color:var(--muted);}
+  .steps:empty{display:none;}
+  .step{display:flex; align-items:center; gap:8px; padding:3px 0;}
+  .step .txt{flex:1;}
+  .ico{width:15px; height:15px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; font-size:13px;}
+  .ico.spin{border:2px solid var(--line); border-top-color:var(--brand2); border-radius:50%; animation:spin .7s linear infinite;}
+  .ico.ok{color:var(--ok); font-weight:700;}
+  details.steps summary{cursor:pointer; list-style:none; color:var(--brand2); font-weight:500; outline:none;}
+  details.steps summary::-webkit-details-marker{display:none;}
+  details.steps[open] summary{margin-bottom:4px;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* OCR 识别中气泡 */
+  .loading{display:flex; align-items:center; gap:9px; color:var(--muted);}
+
+  /* markdown 答案 */
   .answer :first-child{margin-top:0;} .answer :last-child{margin-bottom:0;}
-  .answer h1,.answer h2,.answer h3{font-size:15.5px; margin:14px 0 6px;}
-  .answer p{margin:8px 0;} .answer ul,.answer ol{margin:8px 0; padding-left:20px;}
-  .answer table{border-collapse:collapse; font-size:13px; width:100%; margin:8px 0; display:block; overflow-x:auto;}
-  .answer th,.answer td{border:1px solid var(--line); padding:5px 8px; text-align:left;}
-  .answer code{background:#f0f3f7; padding:1px 5px; border-radius:4px; font-size:13px;}
+  .answer h1,.answer h2,.answer h3{font-size:15.5px; margin:15px 0 7px; color:var(--brand); font-weight:600;}
+  .answer p{margin:9px 0;} .answer ul,.answer ol{margin:9px 0; padding-left:20px;}
+  .answer li{margin:3px 0;}
+  .answer table{border-collapse:collapse; font-size:13px; width:100%; margin:10px 0; display:block; overflow-x:auto;}
+  .answer th{background:var(--soft);} .answer th,.answer td{border:1px solid var(--line); padding:6px 9px; text-align:left;}
+  .answer code{background:var(--soft); padding:1px 5px; border-radius:5px; font-size:13px; color:#b5326a;}
   .answer strong{color:var(--brand);}
-  .typing .d{display:inline-block;width:6px;height:6px;margin:0 1px;border-radius:50%;background:var(--brand2);animation:b 1.2s infinite;}
+  .answer hr{border:0; border-top:1px solid var(--line2); margin:13px 0;}
+  .answer blockquote{margin:9px 0; padding:2px 12px; border-left:3px solid var(--line); color:var(--muted);}
+
+  .typing .d{display:inline-block; width:7px; height:7px; margin:0 2px; border-radius:50%; background:var(--brand2); animation:b 1.2s infinite;}
   .typing .d:nth-child(2){animation-delay:.2s;} .typing .d:nth-child(3){animation-delay:.4s;}
-  @keyframes b{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+  @keyframes b{0%,60%,100%{opacity:.25; transform:translateY(0)}30%{opacity:1; transform:translateY(-3px)}}
   .err{color:var(--err); font-size:14px;}
-  .welcome{color:var(--muted); text-align:center; margin:28px 8px;}
-  .welcome .big{font-size:17px; color:var(--ink); margin-bottom:6px;}
-  .chips{display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top:14px;}
-  .chip{background:var(--panel); border:1px solid var(--line); border-radius:18px;
-    padding:8px 14px; font-size:13px; color:var(--brand2);}
-  .chip:active{background:#e8eef4;}
+
+  /* 欢迎页 */
+  .welcome{text-align:center; margin:34px 10px; color:var(--muted);}
+  .welcome .hi{font-size:34px; margin-bottom:8px;}
+  .welcome .big{font-size:18px; color:var(--ink); font-weight:600; margin-bottom:7px;}
+  .welcome .sub{font-size:13.5px; line-height:1.6;}
+  .chips{display:flex; flex-wrap:wrap; gap:9px; justify-content:center; margin-top:18px;}
+  .chip{background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:9px 15px;
+    font-size:13px; color:var(--brand2); box-shadow:0 1px 2px rgba(16,40,64,.05); transition:.15s; cursor:pointer;}
+  .chip:hover{border-color:var(--brand2);} .chip:active{background:var(--soft);}
+  .tip{margin-top:18px; font-size:12px; color:var(--muted); line-height:1.6;}
+  .tip b{color:var(--brand2); font-weight:600;}
+
+  /* 回到底部 */
+  #jump{position:fixed; right:16px; bottom:calc(82px + env(safe-area-inset-bottom)); width:42px; height:42px;
+    border-radius:50%; background:#fff; border:1px solid var(--line); box-shadow:0 3px 12px rgba(16,40,64,.18);
+    color:var(--brand2); font-size:19px; display:none; align-items:center; justify-content:center; z-index:8; cursor:pointer;}
+  #jump.show{display:flex;} #jump:active{background:var(--soft);}
+
+  /* 输入区 */
   footer{flex:0 0 auto; background:var(--panel); border-top:1px solid var(--line);
-    padding:10px 12px calc(10px + env(safe-area-inset-bottom));}
-  .inputbar{max-width:760px; margin:0 auto; display:flex; gap:8px; align-items:flex-end;}
-  #q{flex:1; resize:none; border:1px solid var(--line); border-radius:20px; padding:11px 15px;
-    font-size:15px; max-height:200px; outline:none; font-family:inherit; line-height:1.4;}
-  #q:focus{border-color:var(--brand2);}
-  #send{flex:0 0 auto; width:46px; height:46px; border-radius:50%; border:0; background:var(--brand);
-    color:#fff; font-size:18px; display:flex; align-items:center; justify-content:center;}
-  #send:disabled{opacity:.45;}
-  #gate{position:fixed; inset:0; background:var(--bg); display:none; align-items:center; justify-content:center; z-index:9; padding:24px;}
-  #gate .card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:22px; width:100%; max-width:340px;}
+    padding:11px 12px calc(11px + env(safe-area-inset-bottom));}
+  .inputbar{max-width:780px; margin:0 auto; display:flex; gap:8px; align-items:flex-end;}
+  #pic{flex:0 0 auto; width:44px; height:46px; border-radius:14px; border:1px solid var(--line);
+    background:#fff; font-size:20px; line-height:1; display:flex; align-items:center; justify-content:center; transition:.15s;}
+  #pic:active{background:var(--soft);} #pic:disabled{opacity:.45;}
+  #q{flex:1; resize:none; border:1px solid var(--line); border-radius:22px; padding:12px 16px;
+    font-size:15px; max-height:200px; outline:none; font-family:inherit; line-height:1.45; transition:border-color .15s, box-shadow .15s;}
+  #q:focus{border-color:var(--brand2); box-shadow:0 0 0 3px rgba(31,111,168,.12);}
+  #send{flex:0 0 auto; width:46px; height:46px; border-radius:50%; border:0;
+    background:linear-gradient(135deg,#1f6fa8,#0f3d5c); color:#fff; font-size:18px;
+    display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px rgba(15,61,92,.25); transition:.15s;}
+  #send:disabled{opacity:.4; box-shadow:none;}
+
+  /* 图片附件 */
+  #atts{max-width:780px; margin:0 auto 8px; display:flex; flex-wrap:wrap; gap:8px;}
+  #atts:empty{display:none; margin:0;}
+  .att{position:relative; width:62px; height:62px; border-radius:11px; overflow:hidden; border:1px solid var(--line); background:var(--soft); flex:0 0 auto;}
+  .att img{width:100%; height:100%; object-fit:cover; display:block;}
+  .att .badge{position:absolute; left:0; right:0; bottom:0; min-height:17px; padding:0 3px; background:rgba(13,54,80,.74);
+    color:#fff; font-size:9px; display:flex; align-items:center; justify-content:center; gap:3px; line-height:1;}
+  .att .badge .ico{width:10px; height:10px; border-width:2px;}
+  .att .rm{position:absolute; top:2px; right:2px; width:18px; height:18px; border-radius:50%; background:rgba(0,0,0,.5);
+    color:#fff; border:0; font-size:13px; line-height:1; display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0;}
+  .me .imgs{display:flex; flex-wrap:wrap; gap:6px;}
+  .me .bubble img.shot{display:block; max-width:190px; max-height:240px; border-radius:10px;}
+  .me .utext{margin-top:6px; white-space:pre-wrap;}
+
+  /* 拖拽遮罩 */
+  #drop{position:fixed; inset:0; background:rgba(13,54,80,.84); display:none; align-items:center; justify-content:center; z-index:20; pointer-events:none;}
+  #drop.show{display:flex;}
+  #drop .dropbox{border:2px dashed rgba(255,255,255,.8); border-radius:20px; padding:34px 40px; color:#fff; font-size:17px;}
+
+  /* 访问码 */
+  #gate{position:fixed; inset:0; background:var(--bg); display:none; align-items:center; justify-content:center; z-index:30; padding:24px;}
+  #gate .card{background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:24px; width:100%; max-width:340px; box-shadow:var(--shadow);}
   #gate h2{margin:0 0 6px; font-size:16px;} #gate p{color:var(--muted); font-size:13px; margin:0 0 14px;}
-  #gate input{width:100%; padding:11px 14px; border:1px solid var(--line); border-radius:10px; font-size:15px; margin-bottom:12px;}
-  #gate button{width:100%; padding:11px; border:0; border-radius:10px; background:var(--brand); color:#fff; font-size:15px;}
+  #gate input{width:100%; padding:12px 14px; border:1px solid var(--line); border-radius:11px; font-size:15px; margin-bottom:12px; outline:none;}
+  #gate input:focus{border-color:var(--brand2);}
+  #gate button{width:100%; padding:12px; border:0; border-radius:11px; background:var(--brand); color:#fff; font-size:15px;}
   #gate .gerr{color:var(--err); font-size:13px; min-height:18px;}
 </style>
 </head>
 <body>
   <header><div class="bar">
     <span class="logo">🎓</span>
-    <h1>求职尽调助手<small>查公司 · 读懂 JD（数据来自天眼查）</small></h1>
+    <h1>求职助手<small>查公司 · 读懂 JD（数据来自天眼查）</small></h1>
     <button id="newchat">新对话</button>
   </div></header>
 
   <div id="scroll"><div id="wrap">
     <div class="welcome" id="welcome">
+      <div class="hi">🎓</div>
       <div class="big">输入公司名，或粘贴一段招聘 JD</div>
-      <div>查公司：规模 / 是否正规 / 是否外包；读 JD：翻译黑话、拆解要求、识别坑。</div>
+      <div class="sub">查公司：规模 / 是否正规 / 是否外包<br>读 JD：翻译黑话、拆解要求、识别坑</div>
       <div class="chips">
         <span class="chip">北京金堤科技有限公司</span>
         <span class="chip">这家公司是外包吗？</span>
         <span class="chip jd">📋 解读一段招聘 JD 示例</span>
       </div>
+      <div class="tip">📷 招聘信息截图可直接发我；电脑端还能 <b>拖拽图片</b> 进来，或截图后 <b>Ctrl+V</b> 粘贴</div>
     </div>
   </div></div>
 
-  <footer><div class="inputbar">
-    <textarea id="q" rows="1" placeholder="输入公司名，或粘贴一段招聘 JD…" autocomplete="off"></textarea>
+  <button id="jump" aria-label="回到底部">↓</button>
+
+  <footer>
+    <div id="atts"></div>
+    <div class="inputbar">
+    <button id="pic" aria-label="上传招聘截图">📷</button>
+    <input id="file" type="file" accept="image/*" hidden />
+    <textarea id="q" rows="1" placeholder="输入公司名/JD，或点 📷 传招聘截图…" autocomplete="off"></textarea>
     <button id="send" aria-label="发送">➤</button>
   </div></footer>
+
+  <div id="drop"><div class="dropbox">📷 松开图片即可识别招聘信息</div></div>
 
   <div id="gate"><div class="card">
     <h2>需要访问码</h2>
@@ -116,7 +188,7 @@
 
 <script>
 const $ = s => document.querySelector(s);
-const scroll = $('#scroll'), wrap = $('#wrap'), q = $('#q'), send = $('#send');
+const scroll=$('#scroll'), wrap=$('#wrap'), q=$('#q'), send=$('#send'), jump=$('#jump');
 let sessionId = localStorage.getItem('tyc_sid') || (crypto.randomUUID ? crypto.randomUUID() : Date.now()+''+Math.random());
 localStorage.setItem('tyc_sid', sessionId);
 let accessCode = localStorage.getItem('tyc_code') || '';
@@ -124,45 +196,86 @@ let streaming = false;
 
 marked.setOptions({breaks:true});
 
-function scrollDown(){ scroll.scrollTop = scroll.scrollHeight; }
+const TYPING='<span class="typing"><span class="d"></span><span class="d"></span><span class="d"></span></span>';
+
+/* ---- 智能滚动：只在底部时跟随；上滑即停 ---- */
+let autoScroll=true;
+function atBottom(){ return scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 60; }
+function maybeScroll(force){
+  if(force) autoScroll=true;
+  if(autoScroll){ scroll.scrollTop=scroll.scrollHeight; jump.classList.remove('show'); }
+}
+scroll.addEventListener('scroll', ()=>{
+  autoScroll = atBottom();
+  jump.classList.toggle('show', !autoScroll);
+});
+jump.addEventListener('click', ()=> maybeScroll(true));
+
 function hideWelcome(){ const w=$('#welcome'); if(w) w.remove(); }
 
-function addUser(text){
+function addUser(text, images){
   hideWelcome();
   const d=document.createElement('div'); d.className='msg me';
-  const b=document.createElement('div'); b.className='bubble'; b.textContent=text;
-  d.appendChild(b); wrap.appendChild(d); scrollDown();
+  const b=document.createElement('div'); b.className='bubble';
+  if(images && images.length){
+    const ig=document.createElement('div'); ig.className='imgs';
+    images.forEach(u=>{ const im=document.createElement('img'); im.className='shot'; im.src=u; ig.appendChild(im); });
+    b.appendChild(ig);
+  }
+  if(text){ const tx=document.createElement('div'); tx.className='utext'; tx.textContent=text; b.appendChild(tx); }
+  d.appendChild(b); wrap.appendChild(d); maybeScroll(true);
 }
 function addBot(){
   const d=document.createElement('div'); d.className='msg bot';
   const b=document.createElement('div'); b.className='bubble';
   const steps=document.createElement('div'); steps.className='steps';
-  const ans=document.createElement('div'); ans.className='answer';
-  ans.innerHTML='<span class="typing"><span class="d"></span><span class="d"></span><span class="d"></span></span>';
-  b.appendChild(steps); b.appendChild(ans); d.appendChild(b); wrap.appendChild(d); scrollDown();
+  const ans=document.createElement('div'); ans.className='answer'; ans.innerHTML=TYPING;
+  b.appendChild(steps); b.appendChild(ans); d.appendChild(b); wrap.appendChild(d); maybeScroll();
   return {steps, ans};
 }
+function finishLastStep(steps){
+  const last=steps.querySelector('.step:last-child .ico');
+  if(last){ last.className='ico ok'; last.textContent='✓'; }
+}
 function addStep(steps, label, target){
+  finishLastStep(steps);  // 上一步标记完成
   const s=document.createElement('div'); s.className='step';
-  s.innerHTML='<span class="dot"></span><span></span>';
-  s.lastChild.textContent = target ? `${label}：${target}` : label;
-  steps.appendChild(s); scrollDown();
+  s.innerHTML='<span class="ico spin"></span><span class="txt"></span>';
+  s.querySelector('.txt').textContent = target ? `${label}：${target}` : label;
+  steps.appendChild(s); maybeScroll();
 }
 
 async function sendMsg(text){
-  text=(text||'').trim(); if(!text || streaming) return;
+  if(streaming) return;
+  text=(text||'').trim();
+  const curAtts = attachments.slice();
+  if(!text && !curAtts.length) return;
   streaming=true; send.disabled=true; q.value=''; q.style.height='auto';
-  addUser(text);
+  attachments=[]; atts.innerHTML='';
+  addUser(text, curAtts.map(a=>a.url));
   const {steps, ans} = addBot();
+  // 等图片 OCR 完成，把识别文字拼进发送内容（仅发给模型，不显示在用户气泡里）
+  let sendText = text;
+  if(curAtts.length){
+    await Promise.all(curAtts.map(a=>a.promise));
+    const ocrTexts = curAtts.map(a=>a.text).filter(t=>t && t.trim());
+    sendText = [text, ...ocrTexts].filter(Boolean).join('\n\n');
+  }
+  if(!sendText.trim()){
+    ans.innerHTML='<span class="err">图片没识别到文字，换张清晰的或直接输入文字。</span>';
+    streaming=false; send.disabled=false; return;
+  }
+  let answerText='', renderTimer=null;
+  const flush=()=>{ if(renderTimer){clearTimeout(renderTimer); renderTimer=null;} ans.innerHTML=marked.parse(answerText||'（无内容）'); maybeScroll(); };
   try{
     const res = await fetch('/api/chat', {
       method:'POST',
       headers:{'Content-Type':'application/json','X-Access-Code':accessCode},
-      body: JSON.stringify({session_id:sessionId, message:text})
+      body: JSON.stringify({session_id:sessionId, message:sendText})
     });
     if(res.status===401){ ans.innerHTML='<span class="err">访问码无效，请刷新后重新输入。</span>'; localStorage.removeItem('tyc_code'); return; }
     if(!res.ok){ ans.innerHTML='<span class="err">服务出错（'+res.status+'）。</span>'; return; }
-    const reader=res.body.getReader(); const dec=new TextDecoder(); let buf='';
+    const reader=res.body.getReader(), dec=new TextDecoder(); let buf='';
     while(true){
       const {done,value}=await reader.read(); if(done) break;
       buf+=dec.decode(value,{stream:true}); let i;
@@ -170,29 +283,83 @@ async function sendMsg(text){
         const line=buf.slice(0,i); buf=buf.slice(i+1); if(!line.trim()) continue;
         let ev; try{ ev=JSON.parse(line); }catch{ continue; }
         if(ev.type==='tool'){ addStep(steps, ev.label, ev.target); }
-        else if(ev.type==='answer'){
-          ans.innerHTML = marked.parse(ev.content || '（无内容）');
-          if(steps.children.length){
-            const det=document.createElement('details'); det.className='';
-            const sm=document.createElement('summary'); sm.textContent=`已完成 ${steps.children.length} 步数据查询`;
-            steps.classList.add('done'); det.appendChild(sm);
-            steps.parentNode.insertBefore(det, steps); det.appendChild(steps);
-          }
-          scrollDown();
+        else if(ev.type==='reset'){
+          answerText=''; if(renderTimer){clearTimeout(renderTimer); renderTimer=null;} ans.innerHTML=TYPING;
         }
-        else if(ev.type==='error'){ ans.innerHTML='<span class="err">出错：'+(ev.message||'未知错误')+'</span>'; }
+        else if(ev.type==='delta'){
+          if(!answerText && steps.children.length) finishLastStep(steps);  // 答案开始，收尾进度
+          answerText += ev.content||'';
+          if(!renderTimer){ renderTimer=setTimeout(()=>{ renderTimer=null; ans.innerHTML=marked.parse(answerText); maybeScroll(); }, 50); }
+        }
+        else if(ev.type==='answer'){ answerText = ev.content||''; }
+        else if(ev.type==='error'){ if(renderTimer){clearTimeout(renderTimer); renderTimer=null;} ans.innerHTML='<span class="err">出错：'+(ev.message||'未知错误')+'</span>'; }
+        else if(ev.type==='done'){
+          finishLastStep(steps); flush();
+          if(steps.children.length){
+            const det=document.createElement('details'); det.className='steps';
+            const sm=document.createElement('summary'); sm.textContent=`已完成 ${steps.children.length} 步数据查询`;
+            steps.classList.remove('steps'); steps.className='steps-inner';
+            det.appendChild(sm); steps.parentNode.insertBefore(det, steps); det.appendChild(steps);
+          }
+        }
       }
     }
-  }catch(e){
-    ans.innerHTML='<span class="err">网络错误：'+e.message+'</span>';
-  }finally{
-    streaming=false; send.disabled=false; q.focus();
-  }
+  }catch(e){ ans.innerHTML='<span class="err">网络错误：'+e.message+'</span>'; }
+  finally{ streaming=false; send.disabled=false; q.focus(); }
 }
 
 send.addEventListener('click', ()=>sendMsg(q.value));
 q.addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendMsg(q.value); } });
 q.addEventListener('input', ()=>{ q.style.height='auto'; q.style.height=Math.min(q.scrollHeight,200)+'px'; });
+
+/* ---- 上传/拖拽/粘贴招聘截图 → 作为图片附件（后台 OCR，文字不进输入框）---- */
+const pic=$('#pic'), file=$('#file'), drop=$('#drop'), atts=$('#atts');
+let attachments=[];
+function addAttachment(f){
+  if(streaming) return;
+  if(!f || !f.type || !f.type.startsWith('image/')){ alert('请选择图片文件'); return; }
+  const url=URL.createObjectURL(f);
+  const att={file:f, url, text:'', done:false, promise:null};
+  const el=document.createElement('div'); el.className='att';
+  el.innerHTML='<img src="'+url+'"><div class="badge"><span class="ico spin"></span></div><button class="rm" aria-label="删除">×</button>';
+  el.querySelector('.rm').addEventListener('click', ()=>{ el.remove(); const i=attachments.indexOf(att); if(i>=0) attachments.splice(i,1); });
+  atts.appendChild(el); att.el=el;
+  att.promise=(async()=>{
+    try{
+      const fd=new FormData(); fd.append('file', f, f.name||'paste.png');
+      const res=await fetch('/api/ocr',{method:'POST',headers:{'X-Access-Code':accessCode},body:fd});
+      if(res.status===401){ localStorage.removeItem('tyc_code'); throw new Error('401'); }
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const data=await res.json(); att.text=data.text||'';
+    }catch(e){ att.text=''; }
+    att.done=true;
+    const badge=el.querySelector('.badge');
+    if(badge) badge.innerHTML = att.text.trim() ? '<span class="ico ok">✓</span>已识别' : '未识别到文字';
+  })();
+  attachments.push(att);
+}
+pic.addEventListener('click', ()=>{ if(!streaming) file.click(); });
+file.addEventListener('change', ()=>{ const f=file.files[0]; file.value=''; if(f) addAttachment(f); });
+
+document.addEventListener('paste', e=>{
+  const items=e.clipboardData && e.clipboardData.items; if(!items) return;
+  for(const it of items){
+    if(it.type && it.type.startsWith('image/')){ e.preventDefault(); addAttachment(it.getAsFile()); return; }
+  }
+});
+
+let dragN=0;
+const hasFiles = e => e.dataTransfer && Array.from(e.dataTransfer.types||[]).includes('Files');
+window.addEventListener('dragenter', e=>{ if(hasFiles(e)){ e.preventDefault(); dragN++; drop.classList.add('show'); } });
+window.addEventListener('dragover', e=>{ if(hasFiles(e)) e.preventDefault(); });
+window.addEventListener('dragleave', e=>{ if(hasFiles(e) && --dragN<=0){ dragN=0; drop.classList.remove('show'); } });
+window.addEventListener('drop', e=>{
+  if(!hasFiles(e)) return;
+  e.preventDefault(); dragN=0; drop.classList.remove('show');
+  const f=e.dataTransfer.files && e.dataTransfer.files[0];
+  if(f) addAttachment(f);
+});
+
 const SAMPLE_JD = `【Java开发工程师（2025校招）】
 岗位职责：
 1. 负责公司核心业务系统的设计与开发；
@@ -213,10 +380,10 @@ $('#newchat').addEventListener('click', async ()=>{
   try{ await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId})}); }catch{}
   sessionId = crypto.randomUUID ? crypto.randomUUID() : Date.now()+''+Math.random();
   localStorage.setItem('tyc_sid', sessionId);
-  wrap.innerHTML=''; location.reload();
+  location.reload();
 });
 
-// 访问码门控
+/* ---- 访问码门控 ---- */
 async function gate(){
   let cfg={requireAccessCode:false};
   try{ cfg=await (await fetch('/api/config')).json(); }catch{}

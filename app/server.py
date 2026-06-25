@@ -28,7 +28,7 @@ from .diligence import SYSTEM_PROMPT, OPENAI_TOOLS, TOOL_LABEL, dispatch, progre
 _load_dotenv()
 
 try:
-    from fastapi import FastAPI, Request, Header, HTTPException
+    from fastapi import FastAPI, Request, Header, HTTPException, UploadFile, File
     from fastapi.responses import StreamingResponse
     from fastapi.staticfiles import StaticFiles
     import openai
@@ -57,7 +57,7 @@ def _emit(obj: dict[str, Any]) -> str:
 
 
 def run_stream(session_id: str, message: str) -> Iterator[str]:
-    """单回合：流式产出工具进度事件与最终回答（NDJSON 行）。"""
+    """单回合：流式产出工具进度事件与逐字回答（NDJSON 行）。"""
     messages = SESSIONS.get(session_id)
     if messages is None:
         if len(SESSIONS) >= MAX_SESSIONS:
@@ -68,35 +68,53 @@ def run_stream(session_id: str, message: str) -> Iterator[str]:
     try:
         with TycClient() as tyc:
             while True:
-                resp = _ds.chat.completions.create(
-                    model=DEEPSEEK_MODEL, messages=messages, tools=OPENAI_TOOLS, max_tokens=8192,
+                stream = _ds.chat.completions.create(
+                    model=DEEPSEEK_MODEL, messages=messages, tools=OPENAI_TOOLS,
+                    max_tokens=8192, stream=True,
                 )
-                msg = resp.choices[0].message
+                content_parts: list[str] = []
+                tool_acc: dict[int, dict[str, str]] = {}
+                for chunk in stream:
+                    if not chunk.choices:
+                        continue
+                    delta = chunk.choices[0].delta
+                    if delta.content:
+                        content_parts.append(delta.content)
+                        yield _emit({"type": "delta", "content": delta.content})  # 逐字推送
+                    for tc in (delta.tool_calls or []):
+                        slot = tool_acc.setdefault(tc.index, {"id": "", "name": "", "args": ""})
+                        if tc.id:
+                            slot["id"] = tc.id
+                        if tc.function and tc.function.name:
+                            slot["name"] = tc.function.name
+                        if tc.function and tc.function.arguments:
+                            slot["args"] += tc.function.arguments
 
-                assistant: dict[str, Any] = {"role": "assistant", "content": msg.content or ""}
-                if msg.tool_calls:
+                assistant: dict[str, Any] = {"role": "assistant", "content": "".join(content_parts)}
+                if tool_acc:
                     assistant["tool_calls"] = [
-                        {"id": tc.id, "type": "function",
-                         "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
-                        for tc in msg.tool_calls
+                        {"id": s["id"] or f"call_{i}", "type": "function",
+                         "function": {"name": s["name"], "arguments": s["args"]}}
+                        for i, s in enumerate(v for _, v in sorted(tool_acc.items()))
                     ]
                 messages.append(assistant)
 
-                if not msg.tool_calls:
+                if not tool_acc:
                     SESSIONS[session_id] = messages
-                    yield _emit({"type": "answer", "content": msg.content or ""})
                     yield _emit({"type": "done", "session_id": session_id})
                     return
 
-                for tc in msg.tool_calls:
+                yield _emit({"type": "reset"})  # 清掉工具轮可能的过场文字，准备显示进度
+                for call in assistant["tool_calls"]:
+                    name = call["function"]["name"]
                     try:
-                        args = json.loads(tc.function.arguments or "{}")
+                        args = json.loads(call["function"]["arguments"] or "{}")
                     except json.JSONDecodeError:
                         args = {}
-                    label = TOOL_LABEL.get(tc.function.name, tc.function.name)
+                    label = TOOL_LABEL.get(name, name)
                     yield _emit({"type": "tool", "label": label, "target": progress_target(args)})
-                    out = dispatch(tyc, tc.function.name, args)
-                    messages.append({"role": "tool", "tool_call_id": tc.id, "content": out})
+                    out = dispatch(tyc, name, args)
+                    messages.append({"role": "tool", "tool_call_id": call["id"], "content": out})
     except Exception as e:  # noqa: BLE001
         yield _emit({"type": "error", "message": str(e)})
 
@@ -111,6 +129,24 @@ async def reset(req: Request) -> dict:
     body = await req.json()
     SESSIONS.pop(body.get("session_id", ""), None)
     return {"ok": True}
+
+
+@app.post("/api/ocr")
+async def ocr(file: UploadFile = File(...), x_access_code: str | None = Header(default=None)):
+    """上传招聘截图 → 返回识别出的文字（供前端回填输入框）。"""
+    if ACCESS_CODE and x_access_code != ACCESS_CODE:
+        raise HTTPException(status_code=401, detail="访问码错误")
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="空文件")
+    if len(data) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="图片太大（限 8MB）")
+    try:
+        from .ocr import image_to_text
+        text = image_to_text(data)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"识别失败：{e}")
+    return {"text": text}
 
 
 @app.post("/api/chat")
