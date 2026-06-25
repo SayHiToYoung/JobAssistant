@@ -34,7 +34,16 @@ def _load_dotenv(path: str = ".env") -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, val = line.partition("=")
-        key, val = key.strip(), val.strip().strip('"').strip("'")
+        key, val = key.strip(), val.strip()
+        # 去掉行内注释，避免把 "key  # 说明" 里的注释当成值（中文注释还会引发 header 编码错误）
+        if val[:1] not in ("'", '"'):
+            if val.startswith("#"):
+                val = ""
+            else:
+                h = val.find(" #")
+                if h != -1:
+                    val = val[:h].rstrip()
+        val = val.strip('"').strip("'")
         if not val:  # 空占位行（如 DEEPSEEK_API_KEY=）跳过，不污染环境变量
             continue
         os.environ.setdefault(key, val)
