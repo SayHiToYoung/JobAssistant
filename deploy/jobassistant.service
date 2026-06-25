@@ -1,0 +1,15 @@
+[Unit]
+Description=JobAssistant 求职助手 (FastAPI + 天眼查 + DeepSeek)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/JobAssistant
+ExecStart=/opt/JobAssistant/.venv/bin/python -m uvicorn app.server:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONIOENCODING=utf-8
+
+[Install]
+WantedBy=multi-user.target
