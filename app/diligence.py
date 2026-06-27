@@ -40,6 +40,8 @@ B.【JD 解读】把招聘启事（职位描述 JD）翻译成大白话，拆解
 4. 需要风险或专项维度（司法诉讼、经营异常、行政处罚、招投标等）时：先 company_capabilities(company_id)
    看有哪些维度，再用 tyc_call(tool_name=..., arguments=...) 取具体维度数据。
    判断是否外包公司时，可用 tyc_call 调 search_bids 查招投标记录（劳务派遣/人力外包公司常见）。
+5. 调 company_news_sentiment 查近期新闻舆情，关注情感倾向与负面事件（裁员、欠薪、劳动纠纷、
+   行政处罚、暴雷等）；必要时配合 tyc_call 调 get_risk_overview / get_judicial_documents 佐证。
 
 ### 评估维度（务必逐条给出依据）
 - 企业规模：注册资本与实缴资本、参保人数、人员规模、成立年限。
@@ -50,12 +52,15 @@ B.【JD 解读】把招聘启事（职位描述 JD）翻译成大白话，拆解
   信息技术外包(ITO)、业务流程外包(BPO)、灵活用工」等关键词；企业名称是否含「人力/外包/服务/科技服务」；
   招投标记录是否以人力派遣类为主。外包公司本身不等于不能去，但要提醒求职者：可能被派驻甲方、
   晋升与归属感、社保缴纳基数、合同主体与实际用工单位是否一致等问题。
+- 舆情/口碑：近期新闻舆情的情感倾向、有无负面事件（裁员、欠薪、劳动纠纷、处罚、暴雷、跑路等）。
+  注意甄别：新闻舆情接口可能混入同名公司或泛行业新闻，只采纳与该公司明确相关的；无相关负面就如实说明。
 
 ### 公司尽调输出（中文 Markdown）
 1. **一句话结论**：是否建议投递/入职，给出谨慎/可考虑/推荐的总体倾向。
 2. **关键事实**：规模、正规性、是否外包，各列数据依据。
-3. **求职者提醒**：面试/签约时要重点确认的点（实际用工单位、社保、合同主体、加班/外派等）。
-4. **数据局限**：哪些信息天眼查查不到、结论的不确定性。
+3. **📰 舆情风评**：近期新闻舆情的总体倾向、有无值得注意的负面事件；与该公司无明确相关负面时，写“近期未见明显负面”。
+4. **求职者提醒**：面试/签约时要重点确认的点（实际用工单位、社保、合同主体、加班/外派等）。
+5. **数据局限**：哪些信息天眼查查不到、结论的不确定性。
 
 ================ 能力 B：JD 解读 ================
 
@@ -151,6 +156,20 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "company_news_sentiment",
+        "description": "查询企业近期新闻舆情：发稿媒体、新闻标题、发布时间、情感倾向、舆情标签。"
+        "用于了解公司口碑与负面信息（裁员、欠薪、纠纷、处罚、暴雷等）。做公司尽调时应调用，并在报告里给出舆情风评。"
+        "注意返回结果可能混入同名或泛行业新闻，需甄别只采纳与该公司明确相关的。传入准确企业名称。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "company_name": {"type": "string", "description": "准确的企业名称"},
+                "page_size": {"type": "number", "description": "返回新闻条数，默认 15"},
+            },
+            "required": ["company_name"],
+        },
+    },
+    {
         "name": "tyc_call",
         "description": "通用入口：调用任意天眼查工具获取具体维度明细。"
         "当需要 company_capabilities 列出的专项维度数据（司法诉讼、经营异常、行政处罚、招投标 search_bids、"
@@ -197,6 +216,7 @@ TOOL_LABEL = {
     "company_people": "查企业人员",
     "company_group_profile": "查股权/集团关系",
     "company_capabilities": "查可用数据维度",
+    "company_news_sentiment": "查新闻舆情",
     "tyc_call": "查专项维度",
 }
 
@@ -214,6 +234,10 @@ def dispatch(tyc: TycClient, name: str, args: dict[str, Any]) -> str:
             return tyc.group_profile(args["company_name"])
         if name == "company_capabilities":
             return tyc.capabilities(args["company_id"])
+        if name == "company_news_sentiment":
+            return tyc.call("call_tool", company_name=args["company_name"],
+                            tool_name="get_news_sentiment",
+                            arguments={"page": 1, "page_size": int(args.get("page_size", 15))})
         if name == "tyc_call":
             return tyc.call(args["tool_name"], **(args.get("arguments") or {}))
         return f"未知工具：{name}"
