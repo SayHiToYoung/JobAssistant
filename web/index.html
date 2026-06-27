@@ -102,6 +102,12 @@
   #jump.show{display:flex;} #jump:active{background:var(--soft);}
 
   /* 输入区 */
+  /* 功能标签 */
+  #tabs{max-width:780px; margin:0 auto 9px; display:flex; gap:6px;}
+  .tab{flex:1; padding:8px 3px; border:1px solid var(--line); background:#fff; border-radius:10px;
+    font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; transition:.15s;}
+  .tab.on{background:var(--brand); color:#fff; border-color:var(--brand); font-weight:600;}
+  .tab:active{transform:scale(.97);}
   footer{flex:0 0 auto; background:var(--panel); border-top:1px solid var(--line);
     padding:11px 12px calc(11px + env(safe-area-inset-bottom));}
   .inputbar{max-width:780px; margin:0 auto; display:flex; gap:8px; align-items:flex-end;}
@@ -152,23 +158,17 @@
     <button id="newchat">新对话</button>
   </div></header>
 
-  <div id="scroll"><div id="wrap">
-    <div class="welcome" id="welcome">
-      <div class="hi">🎓</div>
-      <div class="big">输入公司名，或粘贴一段招聘 JD</div>
-      <div class="sub">查公司：规模 / 是否正规 / 是否外包<br>读 JD：翻译黑话、拆解要求、识别坑</div>
-      <div class="chips">
-        <span class="chip">北京金堤科技有限公司</span>
-        <span class="chip">这家公司是外包吗？</span>
-        <span class="chip jd">📋 解读一段招聘 JD 示例</span>
-      </div>
-      <div class="tip">📷 招聘信息截图可直接发我；电脑端还能 <b>拖拽图片</b> 进来，或截图后 <b>Ctrl+V</b> 粘贴</div>
-    </div>
-  </div></div>
+  <div id="scroll"><div id="wrap"></div></div>
 
   <button id="jump" aria-label="回到底部">↓</button>
 
   <footer>
+    <div id="tabs">
+      <button class="tab on" data-mode="company">🏢 公司尽调</button>
+      <button class="tab" data-mode="jd">📋 JD解读</button>
+      <button class="tab" data-mode="reviews">💬 口碑风评</button>
+      <button class="tab" data-mode="dynamics">📈 企业动态</button>
+    </div>
     <div id="atts"></div>
     <div class="inputbar">
     <button id="pic" aria-label="上传招聘截图">📷</button>
@@ -200,6 +200,38 @@ marked.setOptions({breaks:true});
 const TYPING='<span class="typing"><span class="d"></span><span class="d"></span><span class="d"></span></span>';
 function linkify(el){ el.querySelectorAll('a').forEach(a=>{ a.target='_blank'; a.rel='noopener noreferrer'; }); }
 
+/* ---- 功能板块（mode）---- */
+let currentMode = 'company';
+const MODES = {
+  company:  { ph:'输入公司名做尽调…',           hi:'🏢', big:'公司尽调', sub:'输入公司名 → 规模 / 是否正规 / 是否外包', chips:['北京金堤科技有限公司','小米科技有限责任公司'] },
+  jd:       { ph:'粘贴招聘 JD，或点 📷 传截图…', hi:'📋', big:'JD 解读',  sub:'粘贴招聘 JD（或点 📷 传截图）→ 翻译黑话、拆解要求', chips:[['jd','📋 解读一段招聘 JD 示例']] },
+  reviews:  { ph:'输入公司名查口碑风评…',         hi:'💬', big:'口碑风评', sub:'输入公司名 → 新闻舆情 + 全网员工口碑（带来源链接）', chips:['比亚迪股份有限公司'] },
+  dynamics: { ph:'输入公司名查企业动态…',         hi:'📈', big:'企业动态', sub:'输入公司名 → 财报 / 政策 / 对外形象', chips:['阿里巴巴','比亚迪股份有限公司'] },
+};
+function welcomeHTML(mode){
+  const w = MODES[mode];
+  const chips = (w.chips||[]).map(c => Array.isArray(c)
+      ? `<span class="chip ${c[0]}">${c[1]}</span>`
+      : `<span class="chip">${c}</span>`).join('');
+  return `<div class="welcome"><div class="hi">${w.hi}</div><div class="big">${w.big}</div>`
+       + `<div class="sub">${w.sub}</div><div class="chips">${chips}</div></div>`;
+}
+function renderWelcome(){ wrap.innerHTML = welcomeHTML(currentMode); q.placeholder = MODES[currentMode].ph; }
+function newConversation(){
+  try{ fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId})}); }catch{}
+  sessionId = crypto.randomUUID ? crypto.randomUUID() : Date.now()+''+Math.random();
+  localStorage.setItem('tyc_sid', sessionId);
+  attachments.length=0; atts.innerHTML='';
+  renderWelcome();
+}
+function switchMode(mode){
+  if(mode===currentMode || streaming) return;
+  currentMode = mode;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on', t.dataset.mode===mode));
+  newConversation();
+}
+document.querySelectorAll('.tab').forEach(t=> t.addEventListener('click', ()=> switchMode(t.dataset.mode)));
+
 /* ---- 智能滚动：只在底部时跟随；上滑即停 ---- */
 let autoScroll=true;
 function atBottom(){ return scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 60; }
@@ -213,7 +245,7 @@ scroll.addEventListener('scroll', ()=>{
 });
 jump.addEventListener('click', ()=> maybeScroll(true));
 
-function hideWelcome(){ const w=$('#welcome'); if(w) w.remove(); }
+function hideWelcome(){ const w=wrap.querySelector('.welcome'); if(w) w.remove(); }
 
 function addUser(text, images){
   hideWelcome();
@@ -273,7 +305,7 @@ async function sendMsg(text){
     const res = await fetch('/api/chat', {
       method:'POST',
       headers:{'Content-Type':'application/json','X-Access-Code':accessCode},
-      body: JSON.stringify({session_id:sessionId, message:sendText})
+      body: JSON.stringify({session_id:sessionId, message:sendText, mode:currentMode})
     });
     if(res.status===401){ ans.innerHTML='<span class="err">访问码无效，请刷新后重新输入。</span>'; localStorage.removeItem('tyc_code'); return; }
     if(!res.ok){ ans.innerHTML='<span class="err">服务出错（'+res.status+'）。</span>'; return; }
@@ -378,12 +410,7 @@ document.addEventListener('click', e=>{
   if(!e.target.classList.contains('chip')) return;
   sendMsg(e.target.classList.contains('jd') ? SAMPLE_JD : e.target.textContent);
 });
-$('#newchat').addEventListener('click', async ()=>{
-  try{ await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId})}); }catch{}
-  sessionId = crypto.randomUUID ? crypto.randomUUID() : Date.now()+''+Math.random();
-  localStorage.setItem('tyc_sid', sessionId);
-  location.reload();
-});
+$('#newchat').addEventListener('click', ()=>{ if(!streaming) newConversation(); });
 
 /* ---- 访问码门控 ---- */
 async function gate(){
@@ -397,6 +424,7 @@ async function gate(){
     $('#gcode').addEventListener('keydown', e=>{ if(e.key==='Enter') submit(); });
   }
 }
+renderWelcome();
 gate();
 </script>
 </body>

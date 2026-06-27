@@ -1,10 +1,16 @@
 """求职尽调核心（与具体大模型无关）。
 
-集中存放 system prompt、工具定义、工具分发逻辑，供 Claude / DeepSeek / Web 后端共用。
-- TOOLS         Anthropic 风格工具定义
-- OPENAI_TOOLS  OpenAI / DeepSeek function calling 格式
-- dispatch()    把工具调用映射到天眼查数据层
-- TOOL_LABEL    工具名 → 中文进度文案（前端/CLI 展示用）
+4 个功能板块，各有独立 prompt 与工具子集（Web 端按板块分流，命令行用综合模式）：
+- company   公司尽调：工商核心（规模/正规/外包）
+- jd        JD 解读：招聘要求翻译拆解（不调工具）
+- reviews   口碑风评：新闻舆情 + 全网员工口碑
+- dynamics  企业动态：财报/政策/对外形象（联网搜索）
+
+导出：
+- TOOLS / OPENAI_TOOLS   工具定义
+- MODE_PROMPT / MODE_TOOLS + system_for_mode() / tools_for_mode()
+- dispatch() / TOOL_LABEL / progress_target()
+- SYSTEM_PROMPT          命令行综合模式（自动判断意图）
 """
 
 from __future__ import annotations
@@ -12,87 +18,98 @@ from __future__ import annotations
 from typing import Any
 
 from .tyc_client import TycClient, TycError
-from .websearch import search_company_reviews
+from .websearch import search_company_reviews, search_company_dynamics
+
+
+# ---- 命令行综合模式（自动判断意图）------------------------------------------
 
 SYSTEM_PROMPT = """\
-你是一名「应届生求职助手」。用户是即将毕业或刚毕业的求职者。你有两项能力：
-A.【公司尽调】用天眼查工具查证公司工商/经营数据，判断企业规模、是否正规、是否外包。
-B.【JD 解读】把招聘启事（职位描述 JD）翻译成大白话，拆解任职要求、识别套路与坑。
+你是「应届生求职助手」。根据用户输入自动判断意图并处理：
+- 公司名 → 公司尽调（工商工具，判断规模/是否正规/是否外包）
+- 一段招聘 JD → JD 解读（翻译黑话、拆解要求，不调工具）
+- 问口碑/评价/加班 → 口碑风评（company_news_sentiment + search_company_reviews）
+- 问财报/动态/发展/政策/对外形象 → 企业动态（search_company_dynamics）
+基于工具真实数据，不编造；大白话、简洁，面向没有工作经验的应届生；
+引用网络来源时附真实链接、逐字复制 url、勿编造。"""
 
-## 先判断用户要哪一种（路由）
-- 输入是一个公司名称/简称/统一社会信用代码（通常较短，没有岗位职责和任职要求）→ 走【公司尽调】。
-- 输入是一段招聘信息/JD（较长，包含岗位职责、任职要求、薪资、福利等）→ 走【JD 解读】。
-- 既贴了 JD 又问到某家公司怎么样 → 先解读 JD，再对该公司做尽调，结合给结论。
-- 拿不准时按最可能的来；若确实模糊，用一句话问清楚再继续。
 
-通用原则：基于事实，不编造；用大白话，面向没有工作经验的应届生；客观中立，既不制造焦虑也不盲目乐观；
-只提供依据和提醒，不替用户做最终决定。
+# ---- 各板块 prompt（Web 端按 mode 分流）-------------------------------------
 
-================ 能力 A：公司尽调 ================
+COMPANY_PROMPT = """\
+你是「应届生求职助手」的【公司尽调】模块。用户给一个公司名，你用天眼查工具查工商/经营数据，
+从求职者视角判断企业规模、是否正规、是否外包。基于工具真实数据，不编造；大白话、简洁，别长篇大论。
 
-必须基于工具返回的真实数据作答，严禁编造。数据查不到时如实说明。
+## 工作流程
+1. search_companies 锚定主体，复制准确企业名称与 company_id。
+2. company_basic_profile 取基础画像（注册资本、实缴、参保人数、成立日期、经营范围、行业、登记状态、企业类型、注册地址）。
+3. 视需要 company_people（规模/团队）、company_group_profile（背景/股权）。
+4. 需查风险（经营异常/处罚/诉讼/招投标）时，company_capabilities 看维度，再 tyc_call 取明细。
 
-### 工作流程
-1. 先用 search_companies 锚定主体（公司名可能不唯一/有简称）。从候选里挑出最匹配的一条，
-   复制其【准确企业名称】和【企业ID(company_id)】用于后续查询。
-2. 调 company_basic_profile 获取基础画像（工商登记、注册资本、实缴、参保人数、成立日期、
-   经营范围、行业、登记状态、企业类型等）。
-3. 视需要补充：company_people（人员/高管/规模信号）、company_group_profile（股权/集团/背景）。
-4. 需要风险或专项维度（司法诉讼、经营异常、行政处罚、招投标等）时：先 company_capabilities(company_id)
-   看有哪些维度，再用 tyc_call(tool_name=..., arguments=...) 取具体维度数据。
-   判断是否外包公司时，可用 tyc_call 调 search_bids 查招投标记录（劳务派遣/人力外包公司常见）。
-5. 调 company_news_sentiment 查近期新闻舆情，关注情感倾向与负面事件（裁员、欠薪、劳动纠纷、
-   行政处罚、暴雷等）；必要时配合 tyc_call 调 get_risk_overview / get_judicial_documents 佐证。
-6. 调 search_company_reviews 查全网公开口碑（牛客/脉脉/知乎等在职/前员工分享），了解加班、
-   待遇、晋升、管理氛围等真实反馈。
+## 评估（逐条给依据）
+- 规模：注册资本/实缴、参保人数、人员规模、成立年限（实缴与参保比认缴更真实；参保<10 多为小微/空壳）。
+- 是否正规：登记状态、实缴到位、有无经营异常/处罚/严重司法风险、注册地址异常。
+- 是否外包：经营范围/行业/名称是否含劳务派遣/人力资源/人力外包/服务外包/ITO/BPO 等；招投标是否人力派遣为主。
 
-### 评估维度（务必逐条给出依据）
-- 企业规模：注册资本与实缴资本、参保人数、人员规模、成立年限。
-  （注：注册资本仅为认缴，实缴和参保人数更能反映真实体量；参保人数<10 多为小微/空壳风险。）
-- 是否正规：登记状态是否「存续」、成立年限、实缴是否到位、有无经营异常/行政处罚/严重司法风险、
-  注册地址是否异常。
-- 是否外包/劳务派遣公司：看经营范围与行业是否含「劳务派遣、人力资源服务、人力外包、服务外包、
-  信息技术外包(ITO)、业务流程外包(BPO)、灵活用工」等关键词；企业名称是否含「人力/外包/服务/科技服务」；
-  招投标记录是否以人力派遣类为主。外包公司本身不等于不能去，但要提醒求职者：可能被派驻甲方、
-  晋升与归属感、社保缴纳基数、合同主体与实际用工单位是否一致等问题。
-- 舆情/口碑：近期新闻舆情的情感倾向、有无负面事件（裁员、欠薪、劳动纠纷、处罚、暴雷、跑路等）。
-  注意甄别：新闻舆情接口可能混入同名公司或泛行业新闻，只采纳与该公司明确相关的；无相关负面就如实说明。
-- 员工口碑（全网讨论）：来自牛客/脉脉/知乎等的在职/前员工分享，关注加班强度、薪资待遇、晋升空间、
-  管理氛围。这是网友主观信息，有水军与泄愤，需多条交叉判断并标注不确定性，不要被单条极端言论带偏。
+## 输出（中文 Markdown，精简）
+1. **一句话结论**：建议投递/谨慎/推荐。
+2. **关键事实**：规模、正规性、是否外包，各列简洁数据依据（要点或小表，别堆砌）。
+3. **提醒**：面试/签约要确认的点（用工单位、社保、合同主体、加班/外派等）。
+4. 末尾一行导流：「想看口碑风评或企业动态，点上方对应功能。」
 
-### 公司尽调输出（中文 Markdown）
-1. **一句话结论**：是否建议投递/入职，给出谨慎/可考虑/推荐的总体倾向。
-2. **关键事实**：规模、正规性、是否外包，各列数据依据。
-3. **📰 舆情风评**：近期新闻舆情的总体倾向、有无值得注意的负面事件；与该公司无明确相关负面时，写“近期未见明显负面”。
-4. **💬 员工口碑**：综合全网（牛客/脉脉/知乎等）在职/前员工分享，提炼加班/待遇/晋升/管理氛围的真实反馈；明确标注为网友主观信息、仅供参考。
-   **务必附上来源链接：引用观点时用 markdown 链接标注，并在小节末尾列出「🔗 参考来源」清单（每条 [标题](链接)）。链接必须逐字复制 search_company_reviews 返回的真实 url，严禁编造、改写或拼凑；没有链接的观点不要硬编。**
-5. **求职者提醒**：面试/签约时要重点确认的点（实际用工单位、社保、合同主体、加班/外派等）。
-6. **数据局限**：哪些信息天眼查查不到、结论的不确定性。
+只做尽调，不要查舆情/口碑/动态（那是其他功能）。控制篇幅，先给求职者最该知道的。"""
 
-================ 能力 B：JD 解读 ================
 
-默认只做文本解读，**不要调用天眼查工具**；仅当用户明确要求（如“顺便查下这家公司”“这公司靠谱吗”）时，
-才用工具查公司做交叉验证。
+JD_PROMPT = """\
+你是「应届生求职助手」的【JD 解读】模块。用户贴一段招聘 JD（或截图 OCR 文字），你翻译成大白话、
+拆解要求、识别套路。默认不调用任何工具。
 
-### 解读时重点识别
-- 黑话/文化词：“抗压能力强/适应快节奏”常意味加班多；“弹性工作制”常意味下班晚、加班不计；
-  “狼性/结果导向”高强度；“扁平化/年轻团队”可能缺带教与晋升路径；“螺丝钉/独当一面”可能一人多岗；
-  “薪资面议/有竞争力”可能偏低或压价。指出言外之意，但不武断，提醒以面试确认为准。
-- 技术名词：用一句话解释这是什么、应届生要不要会、属于硬要求还是了解即可。
-- 要求性质：“本科及以上/专业/英语等级”=硬门槛；“了解/熟悉 xx”=希望会、不强制；
-  “精通/深入理解”=较高要求；“……者优先/加分”=加分项，没有也能投。
-- 风险信号：招聘主体是人力资源/外包公司而工作派往别处（外包派遣）；小公司却开大厂全家桶要求
-  （萝卜坑或要求虚高）；通篇销售话术、强调高提成低底薪而岗位名却是“管培生/技术”（销售包装）。
+## 重点识别
+- 黑话：抗压/快节奏=加班多；弹性工作制=下班晚/加班不计；狼性/结果导向=高强度；扁平化/年轻团队=可能缺带教与晋升；
+  螺丝钉/独当一面=一人多岗；薪资面议/有竞争力=可能偏低或压价。指出言外之意但不武断，提醒以面试确认为准。
+- 技术名词：一句话解释是什么、要不要会、硬要求还是了解即可。
+- 要求性质：本科/专业/英语=硬门槛；了解/熟悉=希望会不强制；精通/深入=较高要求；者优先/加分=没有也能投。
+- 风险：招聘主体是人力/外包派往别处；小公司开大厂全家桶；销售话术包装成管培/技术。
 
-### JD 解读输出（中文 Markdown）
-1. **一句话总览**：这是个什么岗、靠不靠谱、值不值得投。
-2. **大白话翻译**：逐块把黑话和技术名词翻成人话。
-3. **要求拆解**：分三类列出 —— ✅硬性门槛 / ➕加分项 / 🈳套话水分。
-4. **隐藏信号**：加班/外包/萝卜坑/要求虚高/画饼等，逐条给出 JD 里的依据原文。
-5. **匹配度自评清单**：列出该岗位的关键能力点，让用户自己对照打勾，并说明
-   “通常达到 60–70% 就可以投，应届生不必样样满足”。
-6. **面试可能考点 + 准备建议**：根据 JD 推测会问什么、怎么准备。
-7. **数据局限**：JD 没写清、需面试确认的（真实薪资、社保基数、加班情况、合同主体等）。"""
+## 输出（中文 Markdown）
+1. **一句话总览**：什么岗、靠不靠谱、值不值得投。
+2. **大白话翻译**：逐块翻译黑话与技术名词。
+3. **要求拆解**：✅硬性门槛 / ➕加分项 / 🈳套话水分。
+4. **隐藏信号**：加班/外包/萝卜坑/要求虚高/画饼，逐条给 JD 依据原文。
+5. **匹配度自评清单**：列关键能力点供对照，说明“达到 60–70% 就可投，不必样样满足”。
+6. **面试可能考点 + 准备建议**。
+7. **数据局限**：JD 没写清、需面试确认的（真实薪资、社保基数、加班、合同主体等）。"""
+
+
+REVIEWS_PROMPT = """\
+你是「应届生求职助手」的【口碑风评】模块。用户给一个公司名，你查这家公司的口碑与风评，
+帮判断“值不值得来这里工作”。
+
+## 工作流程
+1. search_companies 锚定主体（拿准确企业名称）。
+2. company_news_sentiment 查新闻舆情（情感倾向、负面事件：裁员/欠薪/纠纷/处罚/暴雷），只采纳与该公司明确相关的。
+3. search_company_reviews 查全网员工口碑（牛客/知乎/职Q：加班/待遇/晋升/管理）。
+
+## 输出（中文 Markdown）
+1. **一句话口碑结论**：总体偏正面/中性/负面，值不值得去。
+2. **📰 舆情风评**：近期新闻舆情倾向、有无负面（无则“近期未见明显负面”）。
+3. **💬 员工口碑**：分 👍正面 / 👎负面，提炼加班/待遇/晋升/管理。**务必附真实来源链接**：引用观点用 markdown 链接，
+   末尾列「🔗 参考来源」（每条 [标题](链接)）；链接逐字复制 search_company_reviews 返回的真实 url，严禁编造。
+4. **提醒**：口碑为网友主观、有水军泄愤，仅供参考、需面试核实。"""
+
+
+DYNAMICS_PROMPT = """\
+你是「应届生求职助手」的【企业动态】模块。用户给一个公司名，你查这家公司近期的经营动态与对外形象，
+帮判断“这公司发展势头和前景如何”——侧重经营/发展/品牌，区别于口碑的员工视角。
+
+## 工作流程
+调 search_company_dynamics 搜该公司近期财报/业绩、战略与政策（如 ESG、新业务）、重要新闻与对外形象。
+
+## 输出（中文 Markdown）
+1. **📝 概述**：一段话综述近期动态与对外形象（发展势头、在做什么、行业地位）。
+2. **🔑 关键细节**：分点列出，每条尽量带具体数字/事实（营收、增长率、融资额、排放量等），逐条附真实来源链接
+   （markdown 链接，逐字复制 search_company_dynamics 返回的真实 url，严禁编造）。
+3. **🔗 参考来源**：列主要来源 [标题](链接)。
+4. 末尾一行：信息来自公开网络搜索，时效与准确性以原文为准。"""
 
 
 # ---- 工具定义（Anthropic 风格）-----------------------------------------------
@@ -119,9 +136,7 @@ TOOLS: list[dict[str, Any]] = [
         "判断企业规模、是否正规、是否外包时优先调用。传入从 search_companies 复制的准确企业名称。",
         "input_schema": {
             "type": "object",
-            "properties": {
-                "company_name": {"type": "string", "description": "准确的企业名称"}
-            },
+            "properties": {"company_name": {"type": "string", "description": "准确的企业名称"}},
             "required": ["company_name"],
         },
     },
@@ -131,9 +146,7 @@ TOOLS: list[dict[str, Any]] = [
         "当需要评估团队规模、管理层背景，或判断是否为空壳/家族小作坊时调用。",
         "input_schema": {
             "type": "object",
-            "properties": {
-                "company_name": {"type": "string", "description": "准确的企业名称"}
-            },
+            "properties": {"company_name": {"type": "string", "description": "准确的企业名称"}},
             "required": ["company_name"],
         },
     },
@@ -143,9 +156,7 @@ TOOLS: list[dict[str, Any]] = [
         "当需要了解公司背景、是否有大集团背书、或穿透股权结构时调用。",
         "input_schema": {
             "type": "object",
-            "properties": {
-                "company_name": {"type": "string", "description": "准确的企业名称"}
-            },
+            "properties": {"company_name": {"type": "string", "description": "准确的企业名称"}},
             "required": ["company_name"],
         },
     },
@@ -156,16 +167,14 @@ TOOLS: list[dict[str, Any]] = [
         "再用 tyc_call 取具体维度。company_id 从 search_companies 候选表的企业ID列复制。",
         "input_schema": {
             "type": "object",
-            "properties": {
-                "company_id": {"type": "string", "description": "企业ID（来自 search_companies 候选表）"}
-            },
+            "properties": {"company_id": {"type": "string", "description": "企业ID（来自 search_companies 候选表）"}},
             "required": ["company_id"],
         },
     },
     {
         "name": "company_news_sentiment",
         "description": "查询企业近期新闻舆情：发稿媒体、新闻标题、发布时间、情感倾向、舆情标签。"
-        "用于了解公司口碑与负面信息（裁员、欠薪、纠纷、处罚、暴雷等）。做公司尽调时应调用，并在报告里给出舆情风评。"
+        "用于了解公司舆情与负面信息（裁员、欠薪、纠纷、处罚、暴雷等）。"
         "注意返回结果可能混入同名或泛行业新闻，需甄别只采纳与该公司明确相关的。传入准确企业名称。",
         "input_schema": {
             "type": "object",
@@ -179,13 +188,21 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "search_company_reviews",
         "description": "查全网公开口碑：用搜索引擎搜该公司在牛客/脉脉/知乎等平台的在职/前员工讨论，"
-        "了解加班强度、薪资待遇、晋升空间、管理氛围等真实反馈。做公司尽调时应调用，在报告里给出员工口碑小节。"
+        "了解加班强度、薪资待遇、晋升空间、管理氛围等真实反馈。"
         "注意结果是网友主观分享、有水军与泄愤，需交叉甄别、标注不确定性。传入准确企业名称。",
         "input_schema": {
             "type": "object",
-            "properties": {
-                "company_name": {"type": "string", "description": "准确的企业名称"}
-            },
+            "properties": {"company_name": {"type": "string", "description": "准确的企业名称"}},
+            "required": ["company_name"],
+        },
+    },
+    {
+        "name": "search_company_dynamics",
+        "description": "查企业近期经营动态与对外形象：用搜索引擎搜该公司的财报/业绩、营收/融资、"
+        "战略与政策（如 ESG、新业务）、重要新闻与品牌形象。用于判断公司发展势头与前景。传入准确企业名称。",
+        "input_schema": {
+            "type": "object",
+            "properties": {"company_name": {"type": "string", "description": "准确的企业名称"}},
             "required": ["company_name"],
         },
     },
@@ -214,14 +231,7 @@ TOOLS: list[dict[str, Any]] = [
 def to_openai_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """把 Anthropic 风格工具定义转成 OpenAI/DeepSeek function calling 格式。"""
     return [
-        {
-            "type": "function",
-            "function": {
-                "name": t["name"],
-                "description": t["description"],
-                "parameters": t["input_schema"],
-            },
-        }
+        {"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["input_schema"]}}
         for t in tools
     ]
 
@@ -238,12 +248,44 @@ TOOL_LABEL = {
     "company_capabilities": "查可用数据维度",
     "company_news_sentiment": "查新闻舆情",
     "search_company_reviews": "查全网口碑",
+    "search_company_dynamics": "搜企业动态",
     "tyc_call": "查专项维度",
 }
 
 
+# ---- 板块 → prompt / 工具子集 ------------------------------------------------
+
+MODE_PROMPT = {
+    "company": COMPANY_PROMPT,
+    "jd": JD_PROMPT,
+    "reviews": REVIEWS_PROMPT,
+    "dynamics": DYNAMICS_PROMPT,
+}
+
+MODE_TOOLS = {
+    "company": ["search_companies", "company_basic_profile", "company_people",
+                "company_group_profile", "company_capabilities", "tyc_call"],
+    "jd": [],
+    "reviews": ["search_companies", "company_news_sentiment", "search_company_reviews"],
+    "dynamics": ["search_company_dynamics"],
+}
+
+
+def system_for_mode(mode: str) -> str:
+    """按板块返回 system prompt；未知 mode 回退综合模式。"""
+    return MODE_PROMPT.get(mode, SYSTEM_PROMPT)
+
+
+def tools_for_mode(mode: str) -> list[dict[str, Any]]:
+    """按板块返回该板块允许的工具子集（OpenAI 格式）；未知 mode 给全部。"""
+    names = MODE_TOOLS.get(mode)
+    if names is None:
+        return OPENAI_TOOLS
+    return [t for t in OPENAI_TOOLS if t["function"]["name"] in names]
+
+
 def dispatch(tyc: TycClient, name: str, args: dict[str, Any]) -> str:
-    """把模型的工具调用映射到 TycClient。返回工具结果文本。"""
+    """把模型的工具调用映射到数据层。返回工具结果文本。"""
     try:
         if name == "search_companies":
             return tyc.search_companies(args["query"], page_size=int(args.get("page_size", 5)))
@@ -261,6 +303,8 @@ def dispatch(tyc: TycClient, name: str, args: dict[str, Any]) -> str:
                             arguments={"page": 1, "page_size": int(args.get("page_size", 15))})
         if name == "search_company_reviews":
             return search_company_reviews(args["company_name"])
+        if name == "search_company_dynamics":
+            return search_company_dynamics(args["company_name"])
         if name == "tyc_call":
             return tyc.call(args["tool_name"], **(args.get("arguments") or {}))
         return f"未知工具：{name}"

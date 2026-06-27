@@ -23,7 +23,7 @@ import uuid
 from typing import Any, Iterator
 
 from .tyc_client import TycClient, _load_dotenv, PROJECT_ROOT
-from .diligence import SYSTEM_PROMPT, OPENAI_TOOLS, TOOL_LABEL, dispatch, progress_target
+from .diligence import system_for_mode, tools_for_mode, TOOL_LABEL, dispatch, progress_target
 
 _load_dotenv()
 
@@ -56,22 +56,25 @@ def _emit(obj: dict[str, Any]) -> str:
     return json.dumps(obj, ensure_ascii=False) + "\n"
 
 
-def run_stream(session_id: str, message: str) -> Iterator[str]:
-    """单回合：流式产出工具进度事件与逐字回答（NDJSON 行）。"""
+def run_stream(session_id: str, message: str, mode: str = "company") -> Iterator[str]:
+    """单回合：流式产出工具进度事件与逐字回答（NDJSON 行）。按板块 mode 选 prompt 与工具子集。"""
     messages = SESSIONS.get(session_id)
     if messages is None:
         if len(SESSIONS) >= MAX_SESSIONS:
             SESSIONS.clear()  # 简单防膨胀
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages = [{"role": "system", "content": system_for_mode(mode)}]
     messages.append({"role": "user", "content": message})
+    tools = tools_for_mode(mode)
 
     try:
         with TycClient() as tyc:
             while True:
-                stream = _ds.chat.completions.create(
-                    model=DEEPSEEK_MODEL, messages=messages, tools=OPENAI_TOOLS,
-                    max_tokens=8192, stream=True,
+                kwargs: dict[str, Any] = dict(
+                    model=DEEPSEEK_MODEL, messages=messages, max_tokens=8192, stream=True,
                 )
+                if tools:  # JD 板块工具子集为空 → 不传 tools，纯文本回答
+                    kwargs["tools"] = tools
+                stream = _ds.chat.completions.create(**kwargs)
                 content_parts: list[str] = []
                 tool_acc: dict[int, dict[str, str]] = {}
                 for chunk in stream:
@@ -156,9 +159,10 @@ async def chat(req: Request, x_access_code: str | None = Header(default=None)):
     body = await req.json()
     session_id = (body.get("session_id") or uuid.uuid4().hex)
     message = (body.get("message") or "").strip()
+    mode = body.get("mode") or "company"
     if not message:
         raise HTTPException(status_code=400, detail="消息为空")
-    return StreamingResponse(run_stream(session_id, message), media_type="application/x-ndjson")
+    return StreamingResponse(run_stream(session_id, message, mode), media_type="application/x-ndjson")
 
 
 # 静态前端兜底挂载在最后（API 路由优先匹配）
