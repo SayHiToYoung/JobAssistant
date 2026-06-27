@@ -51,11 +51,12 @@ def search_company_reviews(company_name: str, count: int = 8) -> str:
         f"# 全网口碑搜索：{company_name}",
         "",
         "> 以下为搜索引擎公开网页摘要（牛客/知乎/脉脉等），属网友主观分享，有水军与泄愤，仅供参考、需交叉甄别。",
+        "> 每条标题即原帖链接，请在报告中引用这些真实链接（逐字复制 url，勿编造）以便用户点击核实。",
         "",
     ]
     for i, x in enumerate(pages, 1):
         title = (x.get("name") or "").strip()
         url = (x.get("url") or "").strip()
         snippet = (x.get("summary") or x.get("snippet") or "").strip().replace("\n", " ")
-        lines.append(f"{i}. **{title}**\n   {snippet[:300]}\n   来源：{url}")
+        lines.append(f"{i}. [{title}]({url})\n   {snippet[:300]}")
     return "\n".join(lines)

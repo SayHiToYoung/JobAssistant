@@ -74,6 +74,7 @@
   .answer th{background:var(--soft);} .answer th,.answer td{border:1px solid var(--line); padding:6px 9px; text-align:left;}
   .answer code{background:var(--soft); padding:1px 5px; border-radius:5px; font-size:13px; color:#b5326a;}
   .answer strong{color:var(--brand);}
+  .answer a{color:var(--brand2); text-decoration:underline; word-break:break-all;}
   .answer hr{border:0; border-top:1px solid var(--line2); margin:13px 0;}
   .answer blockquote{margin:9px 0; padding:2px 12px; border-left:3px solid var(--line); color:var(--muted);}
 
@@ -197,6 +198,7 @@ let streaming = false;
 marked.setOptions({breaks:true});
 
 const TYPING='<span class="typing"><span class="d"></span><span class="d"></span><span class="d"></span></span>';
+function linkify(el){ el.querySelectorAll('a').forEach(a=>{ a.target='_blank'; a.rel='noopener noreferrer'; }); }
 
 /* ---- 智能滚动：只在底部时跟随；上滑即停 ---- */
 let autoScroll=true;
@@ -266,7 +268,7 @@ async function sendMsg(text){
     streaming=false; send.disabled=false; return;
   }
   let answerText='', renderTimer=null;
-  const flush=()=>{ if(renderTimer){clearTimeout(renderTimer); renderTimer=null;} ans.innerHTML=marked.parse(answerText||'（无内容）'); maybeScroll(); };
+  const flush=()=>{ if(renderTimer){clearTimeout(renderTimer); renderTimer=null;} ans.innerHTML=marked.parse(answerText||'（无内容）'); linkify(ans); maybeScroll(); };
   try{
     const res = await fetch('/api/chat', {
       method:'POST',
@@ -289,7 +291,7 @@ async function sendMsg(text){
         else if(ev.type==='delta'){
           if(!answerText && steps.children.length) finishLastStep(steps);  // 答案开始，收尾进度
           answerText += ev.content||'';
-          if(!renderTimer){ renderTimer=setTimeout(()=>{ renderTimer=null; ans.innerHTML=marked.parse(answerText); maybeScroll(); }, 50); }
+          if(!renderTimer){ renderTimer=setTimeout(()=>{ renderTimer=null; ans.innerHTML=marked.parse(answerText); linkify(ans); maybeScroll(); }, 50); }
         }
         else if(ev.type==='answer'){ answerText = ev.content||''; }
         else if(ev.type==='error'){ if(renderTimer){clearTimeout(renderTimer); renderTimer=null;} ans.innerHTML='<span class="err">出错：'+(ev.message||'未知错误')+'</span>'; }
