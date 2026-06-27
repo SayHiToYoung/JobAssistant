@@ -66,7 +66,7 @@ def _format_pages(pages: list[dict[str, Any]]) -> str:
 
 def search_company_reviews(company_name: str, count: int = 8) -> str:
     """搜索公司全网员工口碑（牛客/脉脉/知乎等），返回 Markdown。"""
-    query = f"{company_name} 员工评价 口碑 牛客 脉脉 知乎 加班 待遇 晋升"
+    query = f"{company_name} 员工评价 口碑 牛客 脉脉 知乎 加班 待遇 晋升 入职体验 离职"
     pages, err = bocha_search(query, count)
     if err:
         return err
