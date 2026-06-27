@@ -24,6 +24,7 @@ from typing import Any, Iterator
 
 from .tyc_client import TycClient, _load_dotenv, PROJECT_ROOT
 from .diligence import system_for_mode, tools_for_mode, TOOL_LABEL, dispatch, progress_target
+from .websearch import bocha_search
 
 _load_dotenv()
 
@@ -58,6 +59,9 @@ def _emit(obj: dict[str, Any]) -> str:
 
 def run_stream(session_id: str, message: str, mode: str = "company") -> Iterator[str]:
     """单回合：流式产出工具进度事件与逐字回答（NDJSON 行）。按板块 mode 选 prompt 与工具子集。"""
+    if mode == "dynamics":
+        yield from _run_dynamics(message)
+        return
     messages = SESSIONS.get(session_id)
     if messages is None:
         if len(SESSIONS) >= MAX_SESSIONS:
@@ -120,6 +124,57 @@ def run_stream(session_id: str, message: str, mode: str = "company") -> Iterator
                     messages.append({"role": "tool", "tool_call_id": call["id"], "content": out})
     except Exception as e:  # noqa: BLE001
         yield _emit({"type": "error", "message": str(e)})
+
+
+DYNAMICS_QUERY = "{} 财报 业绩 营收 融资 战略 政策 ESG 业务 最新动态 新闻"
+
+
+def _run_dynamics(company: str) -> Iterator[str]:
+    """企业动态板块：联网搜索 → 先发来源卡片，再流式输出概述/关键细节（不走 agent 工具循环）。"""
+    company = company.strip()
+    pages, err = bocha_search(DYNAMICS_QUERY.format(company), count=8)
+    if err:
+        yield _emit({"type": "error", "message": err})
+        return
+    if not pages:
+        yield _emit({"type": "error", "message": f"未搜到「{company}」的近期动态。"})
+        return
+
+    items = [{
+        "title": (p.get("name") or "").strip(),
+        "site": (p.get("siteName") or "").strip(),
+        "icon": (p.get("siteIcon") or "").strip(),
+        "url": (p.get("url") or "").strip(),
+        "date": (p.get("datePublished") or "")[:10],
+    } for p in pages]
+    yield _emit({"type": "sources", "items": items})
+
+    ctx = "\n\n".join(
+        f"[{i}] {p.get('name','')}（{p.get('siteName','')} {(p.get('datePublished') or '')[:10]}）\n"
+        f"URL: {p.get('url','')}\n{(p.get('summary') or p.get('snippet') or '')[:400]}"
+        for i, p in enumerate(pages, 1)
+    )
+    user = (
+        f"公司：{company}\n\n以下是联网搜索到的资料，请据此输出概述与关键细节，"
+        f"引用时用 markdown 链接附上对应 URL（逐字复制、勿编造）：\n\n{ctx}"
+    )
+    try:
+        stream = _ds.chat.completions.create(
+            model=DEEPSEEK_MODEL,
+            messages=[{"role": "system", "content": system_for_mode("dynamics")},
+                      {"role": "user", "content": user}],
+            max_tokens=8192, stream=True,
+        )
+        for chunk in stream:
+            if not chunk.choices:
+                continue
+            d = chunk.choices[0].delta
+            if d.content:
+                yield _emit({"type": "delta", "content": d.content})
+    except Exception as e:  # noqa: BLE001
+        yield _emit({"type": "error", "message": str(e)})
+        return
+    yield _emit({"type": "done"})
 
 
 @app.get("/api/config")

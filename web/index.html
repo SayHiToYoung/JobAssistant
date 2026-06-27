@@ -62,6 +62,21 @@
   details.steps[open] summary{margin-bottom:4px;}
   @keyframes spin{to{transform:rotate(360deg)}}
 
+  /* 来源卡片（企业动态）*/
+  .srcs:empty{display:none;}
+  .srcs{margin-bottom:11px;}
+  .src-row{display:flex; gap:8px; overflow-x:auto; padding-bottom:3px; -webkit-overflow-scrolling:touch;}
+  .src-card{flex:0 0 144px; border:1px solid var(--line); border-radius:11px; padding:9px 11px;
+    background:var(--soft); text-decoration:none; color:var(--ink); display:block;}
+  .src-card:active{background:#e7edf3;}
+  .src-top{display:flex; align-items:center; gap:5px; margin-bottom:6px;}
+  .src-icon{width:14px; height:14px; border-radius:3px; flex:0 0 auto;}
+  .src-site{font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .src-title{font-size:12px; line-height:1.45; color:var(--ink);
+    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;}
+  .src-more{flex:0 0 auto; align-self:stretch; border:1px dashed var(--line); border-radius:11px;
+    background:#fff; color:var(--brand2); font-size:12px; padding:0 14px; cursor:pointer; white-space:nowrap;}
+
   /* OCR 识别中气泡 */
   .loading{display:flex; align-items:center; gap:9px; color:var(--muted);}
 
@@ -263,9 +278,24 @@ function addBot(){
   const d=document.createElement('div'); d.className='msg bot';
   const b=document.createElement('div'); b.className='bubble';
   const steps=document.createElement('div'); steps.className='steps';
+  const srcs=document.createElement('div'); srcs.className='srcs';
   const ans=document.createElement('div'); ans.className='answer'; ans.innerHTML=TYPING;
-  b.appendChild(steps); b.appendChild(ans); d.appendChild(b); wrap.appendChild(d); maybeScroll();
-  return {steps, ans};
+  b.appendChild(steps); b.appendChild(srcs); b.appendChild(ans); d.appendChild(b); wrap.appendChild(d); maybeScroll();
+  return {steps, srcs, ans};
+}
+function srcCard(s){
+  const icon = s.icon ? `<img class="src-icon" src="${s.icon}" onerror="this.remove()">` : '';
+  return `<a class="src-card" href="${s.url}" target="_blank" rel="noopener noreferrer">`
+    + `<div class="src-top">${icon}<span class="src-site">${s.site||'来源'}</span></div>`
+    + `<div class="src-title">${s.title||''}</div></a>`;
+}
+function renderSources(srcs, items){
+  if(!items || !items.length) return;
+  const top=items.slice(0,3).map(srcCard).join('');
+  const more=items.length>3 ? `<button class="src-more">查看全部 ${items.length} →</button>` : '';
+  srcs.innerHTML = `<div class="src-row">${top}${more}</div>`;
+  const mb=srcs.querySelector('.src-more');
+  if(mb) mb.addEventListener('click', ()=>{ mb.insertAdjacentHTML('beforebegin', items.slice(3).map(srcCard).join('')); mb.remove(); });
 }
 function finishLastStep(steps){
   const last=steps.querySelector('.step:last-child .ico');
@@ -287,7 +317,7 @@ async function sendMsg(text){
   streaming=true; send.disabled=true; q.value=''; q.style.height='auto';
   attachments=[]; atts.innerHTML='';
   addUser(text, curAtts.map(a=>a.url));
-  const {steps, ans} = addBot();
+  const {steps, srcs, ans} = addBot();
   // 等图片 OCR 完成，把识别文字拼进发送内容（仅发给模型，不显示在用户气泡里）
   let sendText = text;
   if(curAtts.length){
@@ -317,6 +347,7 @@ async function sendMsg(text){
         const line=buf.slice(0,i); buf=buf.slice(i+1); if(!line.trim()) continue;
         let ev; try{ ev=JSON.parse(line); }catch{ continue; }
         if(ev.type==='tool'){ addStep(steps, ev.label, ev.target); }
+        else if(ev.type==='sources'){ renderSources(srcs, ev.items||[]); maybeScroll(); }
         else if(ev.type==='reset'){
           answerText=''; if(renderTimer){clearTimeout(renderTimer); renderTimer=null;} ans.innerHTML=TYPING;
         }
