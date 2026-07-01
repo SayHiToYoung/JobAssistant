@@ -1,0 +1,37 @@
+name: Deploy to ECS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:   # 允许在 GitHub 网页手动触发
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 语法检查（挡住跑不起来的代码）
+        run: python -m py_compile app/*.py
+
+      - name: 配置 SSH 私钥
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: 同步代码并重启服务
+        run: |
+          rsync -az --delete \
+            --exclude='.git' --exclude='.github' --exclude='.venv' \
+            --exclude='__pycache__' --exclude='.env' \
+            -e "ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
+            ./ "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/opt/JobAssistant/"
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no \
+            "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}" '
+              cd /opt/JobAssistant &&
+              .venv/bin/pip install -q -r requirements.txt &&
+              systemctl restart jobassistant &&
+              sleep 2 && systemctl is-active jobassistant
+            '
