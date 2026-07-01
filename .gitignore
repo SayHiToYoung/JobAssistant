@@ -1,6 +1,9 @@
 # 密钥不入库
 .env
 
+# 运行时数据（爆料语料库等，线上积累，勿覆盖）
+data/
+
 # Python
 __pycache__/
 *.py[cod]

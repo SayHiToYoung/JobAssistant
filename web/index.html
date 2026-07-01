@@ -183,6 +183,7 @@
       <button class="tab" data-mode="jd">📋 JD解读</button>
       <button class="tab" data-mode="reviews">💬 口碑风评</button>
       <button class="tab" data-mode="dynamics">📈 企业动态</button>
+      <button class="tab" data-mode="insider">🕵️ 内部爆料</button>
     </div>
     <div id="atts"></div>
     <div class="inputbar">
@@ -222,6 +223,7 @@ const MODES = {
   jd:       { ph:'粘贴招聘 JD，或点 📷 传截图…', hi:'📋', big:'JD 解读',  sub:'粘贴招聘 JD（或点 📷 传截图）→ 翻译黑话、拆解要求', chips:[['jd','📋 解读一段招聘 JD 示例']] },
   reviews:  { ph:'输入公司名查口碑风评…',         hi:'💬', big:'口碑风评', sub:'输入公司名 → 新闻舆情 + 全网员工口碑（带来源链接）', chips:['比亚迪股份有限公司'] },
   dynamics: { ph:'输入公司名查企业动态…',         hi:'📈', big:'企业动态', sub:'输入公司名 → 财报 / 政策 / 对外形象', chips:['阿里巴巴','比亚迪股份有限公司'] },
+  insider:  { ph:'输入公司名查内部爆料，或贴文章链接入库…', hi:'🕵️', big:'内部爆料', sub:'输入公司名 → 从爆料公众号文章库里汇总内部舆情（可贴文章链接补充库）', chips:['字节跳动'] },
 };
 function welcomeHTML(mode){
   const w = MODES[mode];

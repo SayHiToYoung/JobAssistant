@@ -25,6 +25,8 @@ from typing import Any, Iterator
 from .tyc_client import TycClient, _load_dotenv, PROJECT_ROOT
 from .diligence import system_for_mode, tools_for_mode, TOOL_LABEL, dispatch, progress_target
 from .websearch import bocha_search
+from .wechat import extract_wechat_urls, fetch_article, ANALYSIS_SYSTEM as WECHAT_SYSTEM
+from . import corpus
 
 _load_dotenv()
 
@@ -61,6 +63,13 @@ def run_stream(session_id: str, message: str, mode: str = "company") -> Iterator
     """单回合：流式产出工具进度事件与逐字回答（NDJSON 行）。按板块 mode 选 prompt 与工具子集。"""
     if mode == "dynamics":
         yield from _run_dynamics(message)
+        return
+    if mode == "insider":
+        yield from _run_insider(message)
+        return
+    wechat_urls = extract_wechat_urls(message)
+    if wechat_urls:  # 贴了公众号文章链接 → 抓取正文后直接分析（任意板块通用）
+        yield from _run_wechat(wechat_urls)
         return
     messages = SESSIONS.get(session_id)
     if messages is None:
@@ -124,6 +133,105 @@ def run_stream(session_id: str, message: str, mode: str = "company") -> Iterator
                     messages.append({"role": "tool", "tool_call_id": call["id"], "content": out})
     except Exception as e:  # noqa: BLE001
         yield _emit({"type": "error", "message": str(e)})
+
+
+def _run_wechat(urls: list[str]) -> Iterator[str]:
+    """公众号文章板块：抓取用户贴的文章正文 → 先发来源卡片，再流式输出分析。"""
+    articles = []
+    for u in urls[:3]:  # 最多一次分析 3 篇，防止过长
+        yield _emit({"type": "tool", "label": "抓取公众号文章", "target": u})
+        art, err = fetch_article(u)
+        if err:
+            yield _emit({"type": "delta", "content": f"\n> ⚠️ {u}\n> {err}\n"})
+            continue
+        corpus.upsert(art)  # 抓过的文章顺手入库，供「内部爆料」按公司名检索
+        articles.append(art)
+    if not articles:
+        yield _emit({"type": "error", "message": "这些链接都没能取到正文（可能已删除或需验证）。"})
+        return
+
+    yield _emit({"type": "reset"})  # 清掉抓取过程中的提示，准备正式输出
+    items = [{
+        "title": a.get("title") or "（无标题）",
+        "site": a.get("author") or "微信公众号",
+        "icon": "",
+        "url": a.get("url", ""),
+        "date": (a.get("publish_time") or "")[:10],
+    } for a in articles]
+    yield _emit({"type": "sources", "items": items})
+
+    ctx = "\n\n".join(
+        f"【文章{i}】{a.get('title','')}（{a.get('author','')} {a.get('publish_time','')}）\n"
+        f"URL: {a.get('url','')}\n正文：\n{a.get('text','')[:6000]}"
+        for i, a in enumerate(articles, 1)
+    )
+    user = f"请分析以下公众号文章：\n\n{ctx}"
+    try:
+        stream = _ds.chat.completions.create(
+            model=DEEPSEEK_MODEL,
+            messages=[{"role": "system", "content": WECHAT_SYSTEM},
+                      {"role": "user", "content": user}],
+            max_tokens=8192, stream=True,
+        )
+        for chunk in stream:
+            if not chunk.choices:
+                continue
+            d = chunk.choices[0].delta
+            if d.content:
+                yield _emit({"type": "delta", "content": d.content})
+    except Exception as e:  # noqa: BLE001
+        yield _emit({"type": "error", "message": str(e)})
+        return
+    yield _emit({"type": "done"})
+
+
+def _run_insider(message: str) -> Iterator[str]:
+    """内部爆料板块：贴链接则抓取入库并分析；输入公司名则在库里检索该公司文章后汇总舆情。"""
+    urls = extract_wechat_urls(message)
+    if urls:  # 贴了文章链接 → 分析 + 自动入库
+        yield from _run_wechat(urls)
+        return
+
+    company = message.strip()
+    hits = corpus.search(company)
+    if not hits:
+        yield _emit({"type": "error", "message": (
+            f"爆料库里还没有讲「{company}」的文章。可以把相关公众号文章链接直接贴进来补充，"
+            "或先批量灌一批历史文章到库里。")})
+        return
+
+    items = [{
+        "title": a.get("title") or "（无标题）",
+        "site": a.get("author") or "微信公众号",
+        "icon": "",
+        "url": a.get("url", ""),
+        "date": (a.get("publish_time") or "")[:10],
+    } for a in hits]
+    yield _emit({"type": "sources", "items": items})
+
+    ctx = "\n\n".join(
+        f"【文章{i}】{a.get('title','')}（{a.get('publish_time','')}）\n"
+        f"URL: {a.get('url','')}\n正文：\n{a.get('text','')[:4000]}"
+        for i, a in enumerate(hits, 1)
+    )
+    user = f"公司：{company}\n\n以下是库里与这家公司相关的爆料文章：\n\n{ctx}"
+    try:
+        stream = _ds.chat.completions.create(
+            model=DEEPSEEK_MODEL,
+            messages=[{"role": "system", "content": corpus.INSIDER_SYSTEM},
+                      {"role": "user", "content": user}],
+            max_tokens=8192, stream=True,
+        )
+        for chunk in stream:
+            if not chunk.choices:
+                continue
+            d = chunk.choices[0].delta
+            if d.content:
+                yield _emit({"type": "delta", "content": d.content})
+    except Exception as e:  # noqa: BLE001
+        yield _emit({"type": "error", "message": str(e)})
+        return
+    yield _emit({"type": "done"})
 
 
 DYNAMICS_QUERY = "{} 财报 业绩 营收 融资 战略 政策 ESG 业务 最新动态 新闻"
